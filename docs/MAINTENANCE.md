@@ -42,7 +42,7 @@ MainActivity负责选文件、两栏预览和用户确认；TocParser负责两�
 
 SIGNING_CERTIFICATE.sha256只保存公开证书指纹；私钥不随源码或ZIP分发。现用签名沿用已有本地debug.keystore，指纹405036e63efe1bd2f106e887801f6deec0b1e496e564dc9b4d7e2a56d1017fca。工具目录中的android-user-home/debug.keystore是持续更新依赖，不能当缓存删除；由用户保留安全离线副本。换电脑先恢复同一私钥，不能临时生成新密钥再以旧应用名发布。发布门禁会拒绝不同证书。
 
-当前是本地个人测试APK，测试签名不代表应用商店正式生产签名。Android官方说明更新涉及应用签名，丢失自己管理的签名密钥会失去原应用的更新能力；debug证书也不适合作为应用商店发行签名。未来正式发行需先制定已安装用户的数据和签名迁移方案，不能靠卸载清数据解决。[Android签名说明](https://developer.android.com/studio/publish/app-signing)
+用户已确认验收并授权将现有v0.1.9晋级GitHub正式版；本次沿用既有个人升级签名，不重签、不重建APK。GitHub正式版状态不改变证书类型；现有debug证书不是应用商店生产签名。Android更新涉及应用签名，丢失自己管理的私钥会失去原应用的更新能力。未来若上架应用商店或迁移签名，须另行制定已有用户的数据与签名兼容方案，不能靠卸载清数据解决。[Android签名说明](https://developer.android.com/studio/publish/app-signing)
 
 GitHub Actions使用runner临时测试签名，只证明源码构建/回归，不作为本机应用的覆盖更新包。不得把私钥明文提交到工作流、仓库或公开日志；远端签名发布需另行明确授权与凭据配置。
 
@@ -50,7 +50,7 @@ GitHub Actions使用runner临时测试签名，只证明源码构建/回归，�
 
 按[DEVICE_ACCEPTANCE](DEVICE_ACCEPTANCE.md)填写真实结果，安装/授权/文件提供者/享做刷新必须与电脑测试分开。发生错误先保留应用数据、导出原件备份，记录选定路径、版本、操作和具体提示；不要反复盲点替换或删除。
 
-公开仓库与发行约定见[GITHUB_PLAN](GITHUB_PLAN.md)，本次新仓及v0.1.9测试版已获授权。提交只包含审核过的源文件与维护配置；verification/和work/等已忽略，不上传用户书籍、日志、私钥或本机路径配置。CI失败先修复再发布，既有Release保持不变。
+公开仓库与发行约定见[GITHUB_PLAN](GITHUB_PLAN.md)，v0.1.9已获用户总体设备验收及正式版授权。首次发布的5附件和标签保留；本次只更新main说明、原Release正文及正式/最新状态，不覆盖附件或移动标签。最新说明入口是[USER_GUIDE](USER_GUIDE.md)；旧源码ZIP中的发布时说明作为历史保留。提交只包含审核过的源文件与维护配置；verification/和work/等已忽略，不上传用户书籍、日志、私钥或本机路径配置。CI失败先处理再推进发行。
 
 已采用A1/A2/A3：现有Android CI在提交和PR上构建、lint及单元测试，成功或失败均尝试保留14天诊断；CI附件使用runner临时签名，不能作为覆盖升级发行包。发布先核验本地APK及同提交CI，再上传草稿并核对名称、大小、SHA-256与资产集合，公开后读回并实际下载核验。Dependabot按月检查Gradle和GitHub Actions，分别分组，普通更新PR上限分别为2和1；更新须人工审查兼容性、许可与回归，不自动合并或发布。配置提交不代表机器人已成功完成首次检查，以实际运行记录为准。
 

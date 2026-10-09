@@ -1,5 +1,13 @@
 # Android 验证记录
 
+## v0.1.9 正式版确认 — 2026-10-09
+
+用户在目标平板验收后明确报告“我已验收，现在改为正式版”。据此接收v0.1.9总体用户验收并将现有Release晋级正式版/最新版本，完善功能和使用说明。该反馈来自用户实际使用；没有补写D01–D18逐项结果、故障注入或云同步测试结果。
+
+此次仅更新文档和Release状态/正文，应用源码、资源、VERSION/code10、标签及原5附件不变。v0.1.9对应提交75c2b978e78f5a3bd5ea4e6a0988b012941c8885已完成178项本地回归（0失败/错误/跳过，lint0错误/27警告）以及main/tag云端CI；云端178项中175通过、3私人样本回归跳过，0失败/错误，lint0错误/28警告。现有5资产已实际下载核验，APK SHA256为9b2f2493a9af482eca0575d8638059e1f8431b366e2a8ffaa87db1b432b792a1。新文档提交按既有CI检查，实际记录见Actions。
+
+下方为发布前阶段的历史记录，包含当时尚待设备验收的状态，不代表现在仍未取得总体用户验收。详细验收来源及后续复测清单见[DEVICE_ACCEPTANCE](docs/DEVICE_ACCEPTANCE.md)。
+
 ## GitHub 首次发布 — 2026-10-09
 
 用户已授权公开PDF_Bookmarks_Android及v0.1.9个人测试版。本次只更新公开说明、CI失败诊断及月度依赖PR配置，应用代码/资源、VERSION、versionCode和原签名APK不变；下方“未创建/未发布”属于各次本地交付时的历史状态。现有178项本地回归通过、lint0错误/27警告的证据继续适用。云端不提供私人真实输入，对应测试跳过不计通过；实际运行见[Actions](https://github.com/Zerozero05/PDF_Bookmarks_Android/actions)，资产及SHA清单见[v0.1.9](https://github.com/Zerozero05/PDF_Bookmarks_Android/releases/tag/v0.1.9)。本段不将待执行云端检查当成通过；新版目标设备D01–D18仍待实测。
