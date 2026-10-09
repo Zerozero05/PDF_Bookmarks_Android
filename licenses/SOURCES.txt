@@ -1,0 +1,21 @@
+Full license and notice collection for the actual Android runtime dependencies.
+Apache PDFBox LICENSE includes Adobe, Liberation Fonts SIL OFL 1.1 and TwelveMonkeys terms.
+PdfBox-Android 2.0.27.0 AAR/source archives do not carry separate META-INF LICENSE/NOTICE files; the Apache PDFBox 2.0.27 upstream license/notice and actual source/resource headers are retained here.
+Gson 2.11.0 source copyright header is retained together with the full Apache License 2.0.
+Bouncy Castle license is printed by org.bouncycastle.LICENSE in the exact bcprov 1.72 artifact; it also applies to its bcpkix and bcutil 1.72 modules.
+Unicode resource headers identify data versions 8.0.0 and 10.0.0. The full official upstream Unicode license is retained separately.
+Gradle Wrapper license is extracted from the exact wrapper JAR bundled with this source project.
+
+UPSTREAM https://repo.maven.apache.org/maven2/org/apache/pdfbox/pdfbox/2.0.27/pdfbox-2.0.27.jar
+UPSTREAM https://repo.maven.apache.org/maven2/com/tom-roush/pdfbox-android/2.0.27.0/pdfbox-android-2.0.27.0-sources.jar
+UPSTREAM https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0-sources.jar
+UPSTREAM https://repo.maven.apache.org/maven2/org/bouncycastle/bcprov-jdk15to18/1.72/bcprov-jdk15to18-1.72.jar
+UPSTREAM https://repo.maven.apache.org/maven2/com/tom-roush/pdfbox-android/2.0.27.0/pdfbox-android-2.0.27.0.aar
+UPSTREAM https://www.unicode.org/license.txt
+
+SHA256 apache-pdfbox-2.0.27.jar a25ad2a0be6b0bf9eb0e972abd09c34c0e797a3ce2a980d5ff035ff4cf078037
+SHA256 pdfbox-android-2.0.27.0-sources.jar 340b7e30afa2dc52af2e84c729aba5422eb34302006c9be48a4993e89b1a7f85
+SHA256 gson-2.11.0-sources.jar 49a853f71bc874ee1898a4ad5009b57d0c536e5a998b3890253ffbf4b7276ad3
+SHA256 bcprov-jdk15to18-1.72.jar ea66ea8a450810b2193e8bf9a7ad3e46307c9896224c0f407d1b7d96ba1221cc
+SHA256 pdfbox-android-2.0.27.0.aar 30277f879cfd571db2a137582c95516a0d4ea6778e945519bc58ca93d57d88c7
+SHA256 Unicode-LICENSE.txt e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96

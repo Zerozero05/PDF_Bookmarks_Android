@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "mapping": {"offset": 2},
+  "bookmarks": [
+    {"title": "第一章 示例", "page": 1, "children": [{"title": "1.1 子目录", "page": 2}]},
+    {"title": "第二章 示例", "pdf_page": 5}
+  ]
+}

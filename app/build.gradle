@@ -1,0 +1,36 @@
+plugins { id 'com.android.application' }
+def appVersion = rootProject.file('VERSION').text.trim()
+android {
+    namespace 'cn.local.pdfbookmarks'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+    defaultConfig {
+        applicationId 'cn.local.pdfbookmarks'
+        minSdk 26
+        targetSdk 35
+        versionCode 10
+        versionName appVersion
+        resValue 'string', 'app_version', appVersion
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    packaging {
+        resources.excludes += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE', 'META-INF/LICENSE.txt', 'META-INF/NOTICE', 'META-INF/NOTICE.txt', 'META-INF/versions/9/OSGI-INF/MANIFEST.MF']
+    }
+    buildTypes { release { minifyEnabled false } }
+    testOptions {
+        unitTests.returnDefaultValues = true
+        unitTests.all {
+            ['jasminum.fixture', 'jasminum.actualPageCount', 'enjoy.fixtureFolder', 'enjoy.mixedFixtureFolder'].each { key ->
+                if (System.getProperty(key) != null) systemProperty key, System.getProperty(key)
+            }
+        }
+    }
+}
+dependencies {
+    implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+    implementation 'com.google.code.gson:gson:2.11.0'
+    testImplementation 'junit:junit:4.13.2'
+}

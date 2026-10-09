@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "mapping": {"segments": [
+    {"printed_start": 1, "printed_end": 10, "pdf_start": 3},
+    {"printed_start": 11, "printed_end": 20, "pdf_start": 14}
+  ]},
+  "bookmarks": [
+    {"title": "第一部分 示例", "page": 1},
+    {"title": "第二部分 示例", "page": 11}
+  ]
+}
