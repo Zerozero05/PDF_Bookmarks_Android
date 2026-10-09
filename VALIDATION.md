@@ -4,6 +4,8 @@
 
 用户已授权公开PDF_Bookmarks_Android及v0.1.9个人测试版。本次只更新公开说明、CI失败诊断及月度依赖PR配置，应用代码/资源、VERSION、versionCode和原签名APK不变；下方“未创建/未发布”属于各次本地交付时的历史状态。现有178项本地回归通过、lint0错误/27警告的证据继续适用。云端不提供私人真实输入，对应测试跳过不计通过；实际运行见[Actions](https://github.com/Zerozero05/PDF_Bookmarks_Android/actions)，资产及SHA清单见[v0.1.9](https://github.com/Zerozero05/PDF_Bookmarks_Android/releases/tag/v0.1.9)。本段不将待执行云端检查当成通过；新版目标设备D01–D18仍待实测。
 
+首次云端检查在setup-android/v3默认安装已停止提供的旧tools包时失败，未进入应用构建。已明确只安装platform-tools，保留JDK17、SDK35、Gradle8.9及应用源码，不通过忽略错误绕过检查；失败运行和修复后的实际结果保留在Actions中。
+
 ## v0.1.9 — 2026-10-09
 
 - 沿v0.1.8断点精准调整享做“全部替换”成功后的目录副本保留政策，两同步入口一致。临时恢复副本仍用于安全写入；新目录重读核验且成功记录持久保存后，显示精确外部/内部两路径，再自动清理本次旧目录及内部目录恢复副本。保留并添加模式、PDF双备份、统一清理、JSON选项及原业务核心保持，不扫描历史备份、不删除活动catalog/temp或笔迹配置。
