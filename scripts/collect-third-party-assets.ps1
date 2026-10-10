@@ -12,9 +12,10 @@ $assetDirectory=Join-Path $projectDirectory 'app/src/main/assets/licenses'
 New-Item -ItemType Directory -Path $ArtifactDirectory,$licenseDirectory,$assetDirectory -Force | Out-Null
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-function Fetch-Artifact([string]$Url,[string]$Name){
+function Fetch-Artifact([string]$Url,[string]$Name,[string]$ExpectedSha256=''){
     $target=Join-Path $ArtifactDirectory $Name
     if(!(Test-Path -LiteralPath $target)){Invoke-WebRequest -Uri $Url -OutFile $target}
+    if($ExpectedSha256 -and (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ne $ExpectedSha256){throw "依赖校验失败：$Name"}
     return $target
 }
 function Extract-ZipFile([string]$Archive,[string]$Entry,[string]$Destination){
@@ -37,11 +38,12 @@ function Read-ArchiveText([string]$Archive,[string]$Entry){
 
 $apacheUrl='https://repo.maven.apache.org/maven2/org/apache/pdfbox/pdfbox/2.0.27/pdfbox-2.0.27.jar'
 $androidSourceUrl='https://repo.maven.apache.org/maven2/com/tom-roush/pdfbox-android/2.0.27.0/pdfbox-android-2.0.27.0-sources.jar'
-$gsonSourceUrl='https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0-sources.jar'
+$gsonSourceUrl='https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.14.0/gson-2.14.0-sources.jar'
 $unicodeUrl='https://www.unicode.org/license.txt'
 $apache=Fetch-Artifact $apacheUrl 'apache-pdfbox-2.0.27.jar'
 $androidSource=Fetch-Artifact $androidSourceUrl 'pdfbox-android-2.0.27.0-sources.jar'
-$gsonSource=Fetch-Artifact $gsonSourceUrl 'gson-2.11.0-sources.jar'
+# Verified against the official Maven Central published checksum.
+$gsonSource=Fetch-Artifact $gsonSourceUrl 'gson-2.14.0-sources.jar' 'a4873f0ef88981cab520c3d7449cd89a68e605f15e9fe46e1aa2c77d5f87eb6f'
 $unicode=Fetch-Artifact $unicodeUrl 'Unicode-LICENSE.txt'
 Extract-ZipFile $apache 'META-INF/LICENSE' (Join-Path $licenseDirectory 'PDFBox-LICENSE.txt')
 Extract-ZipFile $apache 'META-INF/NOTICE' (Join-Path $licenseDirectory 'PDFBox-NOTICE.txt')
@@ -85,7 +87,7 @@ $sources=@(
     'Full license and notice collection for the actual Android runtime dependencies.',
     'Apache PDFBox LICENSE includes Adobe, Liberation Fonts SIL OFL 1.1 and TwelveMonkeys terms.',
     'PdfBox-Android 2.0.27.0 AAR/source archives do not carry separate META-INF LICENSE/NOTICE files; the Apache PDFBox 2.0.27 upstream license/notice and actual source/resource headers are retained here.',
-    'Gson 2.11.0 source copyright header is retained together with the full Apache License 2.0.',
+    'Gson 2.14.0 source copyright header is retained together with the full Apache License 2.0.',
     'Bouncy Castle license is printed by org.bouncycastle.LICENSE in the exact bcprov 1.72 artifact; it also applies to its bcpkix and bcutil 1.72 modules.',
     'Unicode resource headers identify data versions 8.0.0 and 10.0.0. The full official upstream Unicode license is retained separately.',
     'Gradle Wrapper license is extracted from the exact wrapper JAR bundled with this source project.',

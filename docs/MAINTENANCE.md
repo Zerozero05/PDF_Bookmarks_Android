@@ -10,7 +10,7 @@ MainActivity负责选文件、两栏预览和用户确认；TocParser负责两�
 
 ## 构建、版本及发布
 
-固定JDK17、SDK35/build-tools35.0.0、Gradle8.9及Wrapper SHA校验，依赖版本见app/build.gradle。VERSION是显示版本的唯一来源，Gradle versionName和界面帮助自动读取；每次覆盖升级还需把app/build.gradle的versionCode增加1。先完成本机回归，再提交远端。
+固定JDK17、SDK Platform 35/build-tools36.0.0、AGP9.4.1、Gradle9.8.0及Wrapper SHA校验，依赖版本见app/build.gradle。VERSION是显示版本的唯一来源，Gradle versionName和界面帮助自动读取；每次覆盖升级还需把app/build.gradle的versionCode增加1。先完成本机回归，再提交远端。
 
 标准开发检查：
 

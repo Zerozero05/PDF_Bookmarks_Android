@@ -7,12 +7,12 @@ The Android application source is provided under the GNU Affero General Public L
 | Component | Version | License | Purpose |
 | --- | --- | --- | --- |
 | PdfBox-Android, `com.tom-roush:pdfbox-android` | 2.0.27.0 | Apache License 2.0 | PDF parsing and internal outline writing |
-| Gson, `com.google.code.gson:gson` | 2.11.0 | Apache License 2.0 | Strict JSON input handling |
+| Gson, `com.google.code.gson:gson` | 2.14.0 | Apache License 2.0 | Strict JSON input handling |
 | Bouncy Castle `bcprov-jdk15to18`, `bcpkix-jdk15to18`, `bcutil-jdk15to18` | 1.72 | Bouncy Castle license, based on MIT | Transitive PdfBox-Android dependencies |
 
 PdfBox-Android is derived from Apache PDFBox. Preserve the Apache License and applicable PDFBox/PdfBox-Android NOTICE material when redistributing the dependency or the application. Upstream sources are [PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) and [Apache PDFBox](https://pdfbox.apache.org/); the license is [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
 
-Gson is maintained by Google. Its upstream source is [Gson](https://github.com/google/gson), and its license is Apache License 2.0.
+Gson is maintained by Google. Its upstream source is [Gson](https://github.com/google/gson), and its license is Apache License 2.0. The 2.14.0 source archive is obtained from [Maven Central](https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.14.0/); its verified SHA-256 is pinned by the collection script and recorded in both source manifests. The copyright header remains unchanged from 2.11.0.
 
 Bouncy Castle's published license is available at [Bouncy Castle license](https://www.bouncycastle.org/licence.html). Including its cryptographic libraries does not mean this application decrypts, modifies signatures or accepts protected PDFs; this first version rejects such inputs.
 
