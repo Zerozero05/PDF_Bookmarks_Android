@@ -41,7 +41,7 @@ public final class GsonUpgradeCompatibilityTest {
         assertEquals("57928d6e5a6edeb2abd3770a8f95ba44dce45f3b23b7a9dc2b309c581552a78b",
                 hash(Files.readAllBytes(jar)));
         legacyLoader = new URLClassLoader(new URL[]{jar.toUri().toURL()},
-                ClassLoader.getPlatformClassLoader());
+                ClassLoader.getSystemClassLoader().getParent());
         Class<?> gson = legacyLoader.loadClass("com.google.gson.Gson");
         assertNotSame(Gson.class, gson);
         legacy = gson.getConstructor().newInstance();

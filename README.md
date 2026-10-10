@@ -89,7 +89,7 @@ v0.1.9仅改变享做目录全部替换模式：新目录核验成功后自动�
 
 ## 源码与构建
 
-源码入口为 `app/src/main`；显示版本只在 `VERSION` 更新，Gradle及界面自动同步，每次升级递增 `app/build.gradle` 的versionCode。使用 JDK 17、Android SDK Platform 35、Build Tools 36.0.0 和项目自带 Gradle 9.8.0 Wrapper：
+源码入口为 `app/src/main`；显示版本只在 `VERSION` 更新，Gradle及界面自动同步，每次升级递增 `app/build.gradle` 的versionCode。使用 JDK 17、Android SDK 35 和项目自带 Gradle Wrapper：
 
 ```powershell
 .\gradlew.bat assembleDebug lintDebug testDebugUnitTest --no-daemon --console=plain
