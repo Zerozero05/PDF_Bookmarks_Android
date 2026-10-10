@@ -1,4 +1,5 @@
 plugins { id 'com.android.application' }
+configurations { legacyGson { transitive = false } }
 def appVersion = rootProject.file('VERSION').text.trim()
 android {
     namespace 'cn.local.pdfbookmarks'
@@ -24,6 +25,8 @@ android {
     testOptions {
         unitTests.returnDefaultValues = true
         unitTests.all {
+            inputs.files(configurations.legacyGson)
+            doFirst { systemProperty 'gson.legacyJar', configurations.legacyGson.singleFile.absolutePath }
             ['jasminum.fixture', 'jasminum.actualPageCount', 'enjoy.fixtureFolder', 'enjoy.mixedFixtureFolder'].each { key ->
                 if (System.getProperty(key) != null) systemProperty key, System.getProperty(key)
             }
@@ -34,4 +37,5 @@ dependencies {
     implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
     implementation 'com.google.code.gson:gson:2.14.0'
     testImplementation 'junit:junit:4.13.2'
+    legacyGson 'com.google.code.gson:gson:2.11.0'
 }
