@@ -2,6 +2,16 @@
 
 适用当前PDF＋JSON版。首次交接或续接先读根WORK_CHECKPOINT.md及最新工作交接，再读[现行需求](REQUIREMENTS.md)与VALIDATION.md；不能用旧无障碍工程替代本工程。
 
+## 文档与更新日志
+
+每次修改仓库都同步维护 [README 更新日志](../README.md#更新日志) 与 [完整记录](../CHANGELOG.md)，覆盖功能、修复、兼容性、来源及独立文档更新。README 保留全部已记录更新，采用“版本／更新｜日期｜主要变更”表格，最新在前；日期统一 `YYYY-MM-DD`，每条以“1、新增／修复／调整／文档：具体变化”的短句编号，不写空泛的“优化体验”。
+
+每次摘要末尾只放一个对应完整章节的“本次完整记录”链接，表后保留“查看全部更新记录”。详细变更、兼容性、升级方式、验证结果与局限放在 CHANGELOG 或已有专题说明中，避免多处重复整段内容；每次更新同时精简重复介绍并核对阅读顺序、链接、默认值与数据保护边界，不能为缩短篇幅删除必要操作或旧历史。
+
+纯文档更新用日期单列，不增加 VERSION／versionCode，不重打包、不移动旧标签或替换发行附件。功能版本的开发、试用、正式发布状态如实区分，准备材料与提交不能代替本次发布确认。
+
+更新日志表格、编号短句与最新在前的展示方法参考 [LinkSwift README](https://github.com/hmjz100/LinkSwift/blob/dev/README.md#更新日志)；本仓库补充逐次详情与完整历史入口，沿用既有 CHANGELOG。仅参考文档组织方式，未引入其程序代码或依赖。
+
 ## 代码与兼容性
 
 MainActivity负责选文件、两栏预览和用户确认；TocParser负责两种JSON和映射；PdfBookmarks负责增量写入/结果校验；PathDocuments/StagedDocuments负责真实SAF身份与授权；StagedReplacement负责可恢复改名；BackupCleanup只负责用户确认后的旧备份门禁。精确修改对应模块，不重写未改变的引擎。
