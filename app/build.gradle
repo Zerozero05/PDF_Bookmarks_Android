@@ -8,7 +8,7 @@ android {
         applicationId 'cn.local.pdfbookmarks'
         minSdk 26
         targetSdk 35
-        versionCode 10
+        versionCode 11
         versionName appVersion
         resValue 'string', 'app_version', appVersion
     }

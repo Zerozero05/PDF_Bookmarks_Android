@@ -5,6 +5,8 @@ import android.content.*;
 import android.database.Cursor;
 import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.graphics.pdf.PdfRenderer;
 import android.net.Uri;
 import android.os.*;
@@ -54,6 +56,9 @@ public final class MainActivity extends Activity {
     private int pathRequest;
     private int pendingPathRequest;
     private String pendingPath="";
+    private FilePickerDialog filePicker;
+    private int systemPickerRequest;
+    private LinearLayout previewPanes,directoryPane,pagePane;
 
     /** 只记录一次已核验成功的替换，不能从旧版备份文件名猜测关联。 */
     private static final class BackupRecord {
@@ -90,12 +95,18 @@ public final class MainActivity extends Activity {
         File session=new File(getCacheDir(),"job-"+UUID.randomUUID());session.mkdirs();
         sourceFile=new File(session,"source.pdf");readyFile=new File(session,"ready.pdf");
         buildUi();
+        if(state!=null)systemPickerRequest=state.getInt("systemPickerRequest",0);
         SharedPreferences prefs=getPreferences(MODE_PRIVATE);
         String p=prefs.getString("pdf",null),j=prefs.getString("json",null);
         if(p!=null){pdfUri=Uri.parse(p);pdfName=prefs.getString("pdfName","PDF");pdfLabel.setText(inputLabel(pdfName,pdfUri));}
         if(j!=null){jsonUri=Uri.parse(j);jsonName=prefs.getString("jsonName","JSON");jsonLabel.setText(jsonName);}
         status.setText(pdfUri!=null||jsonUri!=null?"已记住上次选定的文件，点击预览重新核对。":"选择PDF和对应目录JSON，然后预览。原文件会保留。");
         updateButtons();checkRecovery();
+    }
+    @Override protected void onNewIntent(Intent intent){
+        super.onNewIntent(intent);
+        // 从桌面图标回到已有任务时，只取消尚未完成的系统选择，不重建预览。
+        if(systemPickerRequest!=0)cancelCurrentInput();
     }
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     private TextView text(String value,int size){TextView v=new TextView(this);v.setText(value);v.setTextSize(size);v.setTextColor(INK);return v;}
@@ -107,8 +118,27 @@ public final class MainActivity extends Activity {
         TextView heading=text(title,19);heading.setTypeface(null,Typeface.BOLD);v.addView(heading);return v;
     }
     private Button button(LinearLayout parent,String label,Runnable action){
-        Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextColor(ACCENT);b.setOnClickListener(v->action.run());
-        parent.addView(b,new LinearLayout.LayoutParams(-1,dp(52)));buttons.add(b);return b;
+        Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(15);b.setMinHeight(dp(48));
+        b.setPadding(dp(12),dp(10),dp(12),dp(10));b.setStateListAnimator(null);styleButton(b,false);b.setOnClickListener(v->action.run());
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(8);
+        parent.addView(b,lp);buttons.add(b);return b;
+    }
+    private void styleButton(Button button,boolean primary){
+        GradientDrawable shape=background(primary?ACCENT:Color.WHITE,10);if(!primary)shape.setStroke(dp(1),0xffccdeda);
+        StateListDrawable states=new StateListDrawable();states.addState(new int[]{-android.R.attr.state_enabled},background(0xffe4ece9,10));states.addState(new int[]{},shape);
+        button.setBackground(new RippleDrawable(android.content.res.ColorStateList.valueOf(0x29147a70),states,null));
+        button.setTextColor(new android.content.res.ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{}},
+                new int[]{0xff52676c,primary?Color.WHITE:ACCENT}));
+    }
+    private TextView inputTile(LinearLayout parent,String label,int request){
+        LinearLayout tile=column();tile.setPadding(dp(12),dp(12),dp(12),dp(12));tile.setBackground(background(0xfff6f9f9,10));
+        LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(-1,-2);tileLp.topMargin=dp(12);parent.addView(tile,tileLp);
+        TextView heading=text(label,14);heading.setTypeface(null,Typeface.BOLD);tile.addView(heading);
+        TextView value=text(request==PICK_PDF?"尚未选择 PDF":"尚未选择目录 JSON",15);value.setPadding(0,dp(6),0,dp(4));value.setTextIsSelectable(true);tile.addView(value);
+        LinearLayout actions=new LinearLayout(this);tile.addView(actions);
+        Button browse=button(actions,"浏览文件",()->pick(request));Button paste=button(actions,"粘贴路径",()->inputPath(request));
+        LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,-2,1);left.topMargin=dp(6);left.rightMargin=dp(4);browse.setLayoutParams(left);
+        LinearLayout.LayoutParams right=new LinearLayout.LayoutParams(0,-2,1);right.topMargin=dp(6);right.leftMargin=dp(4);paste.setLayoutParams(right);return value;
     }
     private LinearLayout disclosure(LinearLayout parent,String label){
         LinearLayout content=column();content.setVisibility(View.GONE);
@@ -119,41 +149,41 @@ public final class MainActivity extends Activity {
     private void showMoreActions(){moreActions.setVisibility(View.VISIBLE);moreToggle.setText("更多操作与恢复 ▴");}
     private void buildUi(){
         LinearLayout shell=column();shell.setBackgroundColor(0xfff4f7f8);
-        LinearLayout toolbar=new LinearLayout(this);toolbar.setPadding(dp(16),dp(6),dp(16),dp(6));
-        TextView toolbarTitle=text("PDF目录工具",19);toolbarTitle.setTypeface(null,Typeface.BOLD);toolbar.addView(toolbarTitle,new LinearLayout.LayoutParams(0,-2,1));
-        cancelRead=new Button(this);cancelRead.setText("取消读取 / 返回");cancelRead.setAllCaps(false);cancelRead.setVisibility(View.GONE);cancelRead.setOnClickListener(v->cancelReading());toolbar.addView(cancelRead);
+        LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);toolbar.setPadding(dp(20),dp(10),dp(20),dp(10));
+        TextView toolbarTitle=text("PDF目录工具",23);toolbarTitle.setTypeface(null,Typeface.BOLD);toolbar.addView(toolbarTitle,new LinearLayout.LayoutParams(0,-2,1));
+        cancelRead=new Button(this);cancelRead.setText("取消 / 返回");cancelRead.setAllCaps(false);cancelRead.setTextSize(14);cancelRead.setVisibility(View.GONE);cancelRead.setOnClickListener(v->cancelCurrentInput());toolbar.addView(cancelRead);
         shell.addView(toolbar);
+        ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setIndeterminate(true);progress.setVisibility(View.GONE);progress.setTag("progress");shell.addView(progress,new LinearLayout.LayoutParams(-1,dp(3)));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(0xfff4f7f8);shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout root=column();root.setPadding(dp(24),dp(22),dp(24),dp(22));scroll.addView(root);
         shell.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;});
         setContentView(shell);
-        TextView title=text("PDF目录工具",30);title.setTypeface(null,Typeface.BOLD);root.addView(title);
-        TextView intro=text("把章、节目录写入PDF，点击书签即可跳转。",16);intro.setPadding(0,dp(6),0,dp(20));root.addView(intro);
+        TextView intro=text("选择文件  →  核对目录  →  生成保存",16);intro.setPadding(0,0,0,dp(14));root.addView(intro);
+        status=text("",14);status.setPadding(dp(12),dp(10),dp(12),dp(10));status.setBackground(background(0xffe8f2ef,10));status.setTextIsSelectable(true);
+        LinearLayout.LayoutParams statusLp=new LinearLayout.LayoutParams(-1,-2);statusLp.bottomMargin=dp(14);root.addView(status,statusLp);
         LinearLayout files=card(root,"1  选择文件");
-        pdfLabel=text("尚未选择PDF",15);files.addView(pdfLabel);button(files,"选择 PDF",()->pick(PICK_PDF));
-        button(files,"粘贴 PDF 路径",()->inputPath(PICK_PDF));
-        jsonLabel=text("尚未选择目录JSON",15);files.addView(jsonLabel);button(files,"选择目录 JSON",()->pick(PICK_JSON));
-        button(files,"粘贴 JSON 路径",()->inputPath(PICK_JSON));
+        pdfLabel=inputTile(files,"PDF 原文件",PICK_PDF);
+        jsonLabel=inputTile(files,"目录 JSON",PICK_JSON);
         pathEditor=column();pathEditor.setVisibility(View.GONE);files.addView(pathEditor);
         pathEditor.addView(text("粘贴路径后点击使用；误触可点取消，或按系统返回。",14));
         pathInput=new EditText(this);pathInput.setHint("/享做笔记/…/文件.pdf");pathInput.setMaxLines(3);pathInput.setMinLines(2);pathEditor.addView(pathInput);
         button(pathEditor,"使用此路径",()->resolvePath(pathRequest,pathInput.getText().toString()));
         button(pathEditor,"授权此路径所在文件夹",()->{pendingPathRequest=pathRequest;pendingPath=pathInput.getText().toString();authorizeFolder(pendingPath);});
         button(pathEditor,"取消路径输入 / 返回",this::closePathEditor);
-        button(files,"授权路径所在文件夹",()->{pendingPathRequest=0;pendingPath="";authorizeFolder("/享做笔记/note/文件.pdf");});
-        files.addView(text("支持享做复制的 /享做笔记/… 路径；首次授权所在文件夹，之后可直接粘贴。",14));
-        files.addView(text("兼容桌面目录JSON和Jasminum目录，完整保留多级结构。",14));
-        button(files,"读取文件并预览目录",this::loadPreview);
+        LinearLayout permissions=disclosure(files,"文件夹授权与说明");
+        button(permissions,"授权路径所在文件夹",()->{pendingPathRequest=0;pendingPath="";authorizeFolder("/享做笔记/note/文件.pdf");});
+        permissions.addView(text("支持享做复制的 /享做笔记/… 路径。首次授权所在文件夹，之后可浏览或直接粘贴；不需要全盘访问权限。兼容桌面JSON和Jasminum多级目录。",14));
+        styleButton(button(files,"读取文件并预览目录",this::loadPreview),true);
         LinearLayout preview=card(root,"2  核对目录与目标页");
         summary=text("预览会显示实际PDF总页数、目录层级和目标页。",15);preview.addView(summary);
-        LinearLayout panes=new LinearLayout(this);boolean wide=getResources().getConfiguration().screenWidthDp>=700;
+        LinearLayout panes=new LinearLayout(this);previewPanes=panes;boolean wide=getResources().getConfiguration().screenWidthDp>=700;
         panes.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);preview.addView(panes);
-        LinearLayout directory=column();LinearLayout headings=new LinearLayout(this);headings.setPadding(dp(8),dp(10),dp(8),dp(10));
+        LinearLayout directory=column();directoryPane=directory;LinearLayout headings=new LinearLayout(this);headings.setPadding(dp(8),dp(10),dp(8),dp(10));
         TextView titleHeading=text("目录标题",14);titleHeading.setTypeface(null,Typeface.BOLD);headings.addView(titleHeading,new LinearLayout.LayoutParams(0,-2,1));
         TextView pageHeading=text("目标页",14);pageHeading.setTypeface(null,Typeface.BOLD);pageHeading.setGravity(Gravity.END);headings.addView(pageHeading,new LinearLayout.LayoutParams(dp(100),-2));directory.addView(headings);
         ScrollView treeScroll=new DirectoryScrollView(this);tree=column();treeScroll.addView(tree);emptyTree();
         directory.addView(treeScroll,new LinearLayout.LayoutParams(-1,0,1));
-        LinearLayout page=column();pageLabel=text("点击目录行查看对应PDF页",14);page.addView(pageLabel);
+        LinearLayout page=column();pagePane=page;pageLabel=text("点击目录行查看对应PDF页",14);pageLabel.setPadding(dp(12),dp(10),0,dp(10));page.addView(pageLabel);
         pageImage=new ImageView(this);pageImage.setAdjustViewBounds(true);pageImage.setScaleType(ImageView.ScaleType.FIT_CENTER);page.addView(pageImage,new LinearLayout.LayoutParams(-1,dp(340)));
         if(wide){panes.addView(directory,new LinearLayout.LayoutParams(0,dp(400),1));panes.addView(page,new LinearLayout.LayoutParams(0,-2,1));}
         else{panes.addView(directory,new LinearLayout.LayoutParams(-1,dp(280)));panes.addView(page);}
@@ -162,6 +192,7 @@ public final class MainActivity extends Activity {
         LinearLayout output=card(root,"3  生成并保存");
         outputSettings=text("",15);output.addView(outputSettings);
         generate=button(output,"生成带目录 PDF",this::confirmWrite);
+        styleButton(generate,true);
         open=button(output,"打开已保存的 PDF",this::openOutput);
         cleanup=button(output,"清理旧文件与备份",this::confirmCleanup);
         LinearLayout options=disclosure(output,"处理选项");
@@ -185,14 +216,20 @@ public final class MainActivity extends Activity {
         restoreMissing=button(moreActions,"从备份恢复消失的 PDF…",this::chooseRestoreFolder);
         recoverCatalog=button(output,"恢复上次目录同步前的享做目录",this::confirmRecoverCatalog);
         recover=button(output,"恢复上次替换前的原 PDF",this::confirmRecovery);
-        ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setIndeterminate(true);progress.setVisibility(View.GONE);progress.setTag("progress");root.addView(progress);
-        status=text("",15);status.setPadding(0,dp(8),0,dp(8));root.addView(status);
         button(root,"使用说明",()->new AlertDialog.Builder(this).setTitle("使用说明").setMessage(
-            "选择PDF与JSON，或粘贴共享存储路径 → 读取并预览 → 滑动目录、点击标题或页码核对目标页 → 生成并保存。目录标题和目标页在独立两栏显示。\n\n路径输入可随时取消。系统文件选择器可按系统返回取消；没有选定文件时保留原来的选择。读取时顶部有取消按钮，也可按系统返回。\n\n第3节的“处理选项”可切换同名替换/另存、享做目录保留添加/全部替换以及成功后删除JSON。“更多操作与恢复”保留单独同步、保存已生成PDF、导出备份和恢复消失PDF；未完成任务的恢复入口直接显示。\n\n同名替换需要原文件夹的读写授权：先在该文件夹写好并核验新PDF，再将原件改名为备份，最后把新PDF改为原名。程序不截断或自动删除原PDF。文件来源不支持这些操作时，请另存。\n\n同步享做目录默认勾选，仅适配已识别的共享存储资源文件。请先保存笔记，并到系统设置强行停止享做，不要清除数据。默认保留已有享做目录并添加新目录，也可选择用新目录替换全部已有目录，包括手动目录；保留并添加模式保留原目录备份；全部替换模式核验成功后自动删除本次旧目录及内部目录恢复副本，不能再用它们恢复，失败时保留恢复材料。两种模式均保留PDF备份、原笔迹及其他配置。换输入文件或重开界面时恢复默认保留模式；未知结构、页面映射或文件变化时停止。PDF已含本次JSON的相同书签时，可在“更多操作与恢复”只同步目录，不必再生成PDF。无需无障碍服务，也不联网。\n\n核对新PDF、享做目录、跳转和原笔迹正常后，保存并强行停止享做，可用一个“清理旧文件与备份”按钮。清单列出本次成功记录关联的外部旧PDF、旧目录及应用内恢复备份，确认后统一清理。清理后无法再靠这些备份恢复。保留当前PDF、活动catalog/temp、笔迹和其他配置；原始JSON只按独立勾选处理，不纳入统一清理。不会扫描旧版失去关联的备份、其他任务或未知文件。文件变化时停止；中断可按原清单重试。\n\n只有PDF及所选享做同步均成功后才可选删除JSON。中断保留未删除备份与进度；第3节目录恢复只恢复同步前目录，不改PDF和笔迹。清理前可导出备份；不要卸载程序或清除数据。\n\n加密或含签名字段的PDF会拒绝处理。桌面OCR、批量功能尚未移植。\n\n版本 "+getString(R.string.app_version)+" · GNU AGPL v3\nPDFBox Android / Gson: Apache 2.0\nBouncy Castle: MIT").setPositiveButton("知道了",null).show());
+            "选择PDF与JSON，或粘贴共享存储路径 → 读取并预览 → 滑动目录、点击标题或页码核对目标页 → 生成并保存。目录标题和目标页在独立两栏显示。\n\n浏览文件默认使用应用内列表，右上角固定“取消选择”，不选文件也能返回；空目录和加载中均可取消。列表只浏览已授权位置，返回上级不会访问授权外的目录。首次授权或“更多文件来源”仍使用系统界面；可用系统返回取消；若无法返回，回到系统主屏幕后点击本工具图标，可回到原界面并取消未完成的系统选择。顶部也保留“取消系统选择”入口。路径输入和读取也可在顶部取消，原选择及核对状态保留。\n\n第3节的“处理选项”可切换同名替换/另存、享做目录保留添加/全部替换以及成功后删除JSON。“更多操作与恢复”保留单独同步、保存已生成PDF、导出备份和恢复消失PDF；未完成任务的恢复入口直接显示。\n\n同名替换需要原文件夹的读写授权：先在该文件夹写好并核验新PDF，再将原件改名为备份，最后把新PDF改为原名。程序不截断或自动删除原PDF。文件来源不支持这些操作时，请另存。\n\n同步享做目录默认勾选，仅适配已识别的共享存储资源文件。请先保存笔记，并到系统设置强行停止享做，不要清除数据。默认保留已有享做目录并添加新目录，也可选择用新目录替换全部已有目录，包括手动目录；保留并添加模式保留原目录备份；全部替换模式核验成功后自动删除本次旧目录及内部目录恢复副本，不能再用它们恢复，失败时保留恢复材料。两种模式均保留PDF备份、原笔迹及其他配置。换输入文件或重开界面时恢复默认保留模式；未知结构、页面映射或文件变化时停止。PDF已含本次JSON的相同书签时，可在“更多操作与恢复”只同步目录，不必再生成PDF。无需无障碍服务，也不联网。\n\n核对新PDF、享做目录、跳转和原笔迹正常后，保存并强行停止享做，可用一个“清理旧文件与备份”按钮。清单列出本次成功记录关联的外部旧PDF、旧目录及应用内恢复备份，确认后统一清理。清理后无法再靠这些备份恢复。保留当前PDF、活动catalog/temp、笔迹和其他配置；原始JSON只按独立勾选处理，不纳入统一清理。不会扫描旧版失去关联的备份、其他任务或未知文件。文件变化时停止；中断可按原清单重试。\n\n只有PDF及所选享做同步均成功后才可选删除JSON。中断保留未删除备份与进度；第3节目录恢复只恢复同步前目录，不改PDF和笔迹。清理前可导出备份；不要卸载程序或清除数据。\n\n加密或含签名字段的PDF会拒绝处理。桌面OCR、批量功能尚未移植。\n\n版本 "+getString(R.string.app_version)+" · GNU AGPL v3\nPDFBox Android / Gson: Apache 2.0\nBouncy Castle: MIT").setPositiveButton("知道了",null).show());
         button(root,"许可与开源说明",this::showLicenses);
     }
     private void pick(int request){
-        if(busy)return;
+        if(busy||(filePicker!=null&&filePicker.isShowing()))return;
+        clearPendingPath();closePathEditor();
+        filePicker=new FilePickerDialog(this,request==PICK_PDF,
+            uri->selectInput(request,uri),
+            ()->{status.setText("已取消文件选择，原来的文件和核对状态保留。");updateButtons();},
+            ()->pickSystemFile(request),()->authorizeFolder("/享做笔记/note/文件.pdf"));
+        filePicker.show();
+    }
+    private void pickSystemFile(int request){
         Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
             .setType(request==PICK_PDF?"application/pdf":"*/*")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
@@ -214,6 +251,8 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
+        if(request==systemPickerRequest)systemPickerRequest=0;
+        updateButtons();
         if(result!=RESULT_OK||data==null||data.getData()==null){clearPendingPath();status.setText("已取消文件选择 / 授权，原来的选择保留。可以继续操作。");return;}
         Uri uri=data.getData();
         if(request==PICK_PDF||request==PICK_JSON){
@@ -240,11 +279,11 @@ public final class MainActivity extends Activity {
     }
     private void inputPath(int request){
         clearPendingPath();pathRequest=request;pathInput.setText("");pathInput.setHint(request==PICK_PDF?"粘贴 PDF 路径":"粘贴 JSON 路径");pathEditor.setVisibility(View.VISIBLE);pathInput.requestFocus();
-        status.setText("输入路径后点击使用；取消不会更改文件选择。");
+        status.setText("输入路径后点击使用；取消不会更改文件选择。");updateButtons();
     }
     private void clearPendingPath(){pendingPathRequest=0;pendingPath="";}
     private void closePathEditor(){clearPendingPath();pathEditor.setVisibility(View.GONE);pathInput.clearFocus();
-        android.view.inputmethod.InputMethodManager keyboard=(android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(keyboard!=null)keyboard.hideSoftInputFromWindow(pathInput.getWindowToken(),0);}
+        android.view.inputmethod.InputMethodManager keyboard=(android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(keyboard!=null)keyboard.hideSoftInputFromWindow(pathInput.getWindowToken(),0);updateButtons();}
     private String nameHint(Uri uri){
         try{String id=DocumentsContract.getDocumentId(uri);return id.substring(id.lastIndexOf('/')+1).replaceFirst("^primary:","");}
         catch(IllegalArgumentException e){return "已选文件（读取后显示名称）";}
@@ -254,8 +293,14 @@ public final class MainActivity extends Activity {
         catch(IllegalArgumentException ignored){}return name;
     }
     private void launchPicker(Intent intent,int request){
-        try{startActivityForResult(intent,request);}
-        catch(ActivityNotFoundException|SecurityException e){clearPendingPath();status.setText("未能打开系统文件选择器；当前选择保留。");error(message(e));}
+        try{systemPickerRequest=request;updateButtons();startActivityForResult(intent,request);}
+        catch(ActivityNotFoundException|SecurityException e){systemPickerRequest=0;clearPendingPath();updateButtons();status.setText("未能打开系统文件选择器；当前选择保留。");error(message(e));}
+    }
+    private void cancelCurrentInput(){
+        if(readJob!=null){cancelReading();return;}
+        if(systemPickerRequest!=0){int request=systemPickerRequest;systemPickerRequest=0;finishActivity(request);clearPendingPath();
+            status.setText("已取消系统选择 / 授权，原来的选择和已生成文件保留。");updateButtons();return;}
+        if(pathEditor.getVisibility()==View.VISIBLE){closePathEditor();status.setText("已取消路径输入，原来的文件选择保留。");}
     }
     private void resolvePath(int request,String path){
         try{Uri uri=PathDocuments.resolve(this,path);closePathEditor();selectInput(request,uri);}
@@ -292,7 +337,9 @@ public final class MainActivity extends Activity {
         if(recover!=null){recover.setVisibility(pdfPending?View.VISIBLE:View.GONE);recover.setEnabled(!busy&&!catalogPending);}
         if(exportBackup!=null){exportBackup.setVisibility(getPreferences(MODE_PRIVATE).contains("lastBackup")?View.VISIBLE:View.GONE);exportBackup.setEnabled(!busy);}
         if(restoreMissing!=null){restoreMissing.setVisibility(getPreferences(MODE_PRIVATE).contains("lastBackup")?View.VISIBLE:View.GONE);restoreMissing.setEnabled(!busy&&!catalogPending&&!cleanupPending);}
-        if(cancelRead!=null){cancelRead.setVisibility(readJob!=null?View.VISIBLE:View.GONE);cancelRead.setEnabled(readJob!=null);}
+        if(cancelRead!=null){boolean available=readJob!=null||systemPickerRequest!=0||(pathEditor!=null&&pathEditor.getVisibility()==View.VISIBLE);
+            cancelRead.setVisibility(available?View.VISIBLE:View.GONE);cancelRead.setEnabled(available);
+            cancelRead.setText(readJob!=null?"取消读取 / 返回":systemPickerRequest!=0?"取消系统选择":"取消路径 / 返回");}
         if(outputSettings!=null&&overwrite!=null&&syncEnjoy!=null&&replaceCatalog!=null&&deleteJson!=null){
             String settings=overwrite.isChecked()?"原路径、原名称替换":"另存带目录副本";
             settings+=overwrite.isChecked()&&syncEnjoy.isChecked()?(replaceCatalog.isChecked()?" · 享做目录全部替换":" · 享做目录保留并添加"):" · 不同步享做目录";
@@ -849,9 +896,18 @@ public final class MainActivity extends Activity {
     private static String message(Exception e){return e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();}
     private void error(String message){new AlertDialog.Builder(this).setTitle("需要处理").setMessage(message).setPositiveButton("知道了",null).show();}
     @Override public void onBackPressed(){
+        if(systemPickerRequest!=0){cancelCurrentInput();return;}
         if(pathEditor.getVisibility()==View.VISIBLE){closePathEditor();status.setText("已取消路径输入，原来的文件选择保留。");return;}
         if(readJob!=null){cancelReading();return;}
         if(busy){new AlertDialog.Builder(this).setMessage("正在处理文件，请等待完成后退出，避免保存中断。").setPositiveButton("继续等待",null).show();return;}super.onBackPressed();
     }
-    @Override protected void onDestroy(){previewGeneration++;if(readJob!=null){readJob.cancelled=true;if(readJob.future!=null)readJob.future.cancel(true);readers.execute(readJob::closeInput);}readers.shutdown();worker.shutdown();clearImage();super.onDestroy();}
+    @Override protected void onSaveInstanceState(Bundle state){state.putInt("systemPickerRequest",systemPickerRequest);super.onSaveInstanceState(state);}
+    @Override public void onConfigurationChanged(android.content.res.Configuration configuration){
+        super.onConfigurationChanged(configuration);boolean wide=configuration.screenWidthDp>=700;
+        previewPanes.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+        directoryPane.setLayoutParams(wide?new LinearLayout.LayoutParams(0,dp(400),1):new LinearLayout.LayoutParams(-1,dp(280)));
+        pagePane.setLayoutParams(wide?new LinearLayout.LayoutParams(0,-2,1):new LinearLayout.LayoutParams(-1,-2));
+        if(filePicker!=null&&filePicker.isShowing())filePicker.resize();
+    }
+    @Override protected void onDestroy(){if(filePicker!=null)filePicker.dismiss();previewGeneration++;if(readJob!=null){readJob.cancelled=true;if(readJob.future!=null)readJob.future.cancel(true);readers.execute(readJob::closeInput);}readers.shutdown();worker.shutdown();clearImage();super.onDestroy();}
 }
