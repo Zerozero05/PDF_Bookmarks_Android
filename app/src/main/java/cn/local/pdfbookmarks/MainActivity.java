@@ -50,6 +50,7 @@ public final class MainActivity extends Activity {
     private RadioButton keepCatalog,replaceCatalog;
     private Button syncCatalog,recoverCatalog;
     private EnjoyDirectorySync enjoy;
+    private AppUpdates updates;
     private ReadJob readJob;
     private EditText pathInput;
     private LinearLayout pathEditor;
@@ -90,6 +91,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);PDFBoxResourceLoader.init(getApplicationContext());enjoy=new EnjoyDirectorySync(this);
+        updates=new AppUpdates(this,this::canInstallUpdate,b->styleButton(b,false));
         if(Build.VERSION.SDK_INT>=27)getWindow().getDecorView().setSystemUiVisibility(getWindow().getDecorView().getSystemUiVisibility()|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         // 重建Activity时旧工作线程可能尚未结束；每次使用独立目录避免交叉读写。
         File session=new File(getCacheDir(),"job-"+UUID.randomUUID());session.mkdirs();
@@ -108,6 +110,13 @@ public final class MainActivity extends Activity {
         // 从桌面图标回到已有任务时，只取消尚未完成的系统选择，不重建预览。
         if(systemPickerRequest!=0)cancelCurrentInput();
     }
+    private boolean canInstallUpdate(){
+        return !busy&&readJob==null&&systemPickerRequest==0
+            &&(pathEditor==null||pathEditor.getVisibility()!=View.VISIBLE)&&(filePicker==null||!filePicker.isShowing())
+            &&!getPreferences(MODE_PRIVATE).contains("pendingPdf")&&!enjoy.hasPending()&&!hasCleanupTask();
+    }
+    @Override protected void onResume(){super.onResume();if(updates!=null)updates.onResume();}
+    @Override protected void onPause(){if(updates!=null)updates.onPause();super.onPause();}
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     private TextView text(String value,int size){TextView v=new TextView(this);v.setText(value);v.setTextSize(size);v.setTextColor(INK);return v;}
     private LinearLayout column(){LinearLayout v=new LinearLayout(this);v.setOrientation(LinearLayout.VERTICAL);return v;}
@@ -216,8 +225,9 @@ public final class MainActivity extends Activity {
         restoreMissing=button(moreActions,"从备份恢复消失的 PDF…",this::chooseRestoreFolder);
         recoverCatalog=button(output,"恢复上次目录同步前的享做目录",this::confirmRecoverCatalog);
         recover=button(output,"恢复上次替换前的原 PDF",this::confirmRecovery);
+        updates.attach(disclosure(root,getString(R.string.update_panel,getString(R.string.app_version))));
         button(root,"使用说明",()->new AlertDialog.Builder(this).setTitle("使用说明").setMessage(
-            "选择PDF与JSON，或粘贴共享存储路径 → 读取并预览 → 滑动目录、点击标题或页码核对目标页 → 生成并保存。目录标题和目标页在独立两栏显示。\n\n浏览文件默认使用应用内列表，右上角固定“取消选择”，不选文件也能返回；空目录和加载中均可取消。列表只浏览已授权位置，返回上级不会访问授权外的目录。首次授权或“更多文件来源”仍使用系统界面；可用系统返回取消；若无法返回，回到系统主屏幕后点击本工具图标，可回到原界面并取消未完成的系统选择。顶部也保留“取消系统选择”入口。路径输入和读取也可在顶部取消，原选择及核对状态保留。\n\n第3节的“处理选项”可切换同名替换/另存、享做目录保留添加/全部替换以及成功后删除JSON。“更多操作与恢复”保留单独同步、保存已生成PDF、导出备份和恢复消失PDF；未完成任务的恢复入口直接显示。\n\n同名替换需要原文件夹的读写授权：先在该文件夹写好并核验新PDF，再将原件改名为备份，最后把新PDF改为原名。程序不截断或自动删除原PDF。文件来源不支持这些操作时，请另存。\n\n同步享做目录默认勾选，仅适配已识别的共享存储资源文件。请先保存笔记，并到系统设置强行停止享做，不要清除数据。默认保留已有享做目录并添加新目录，也可选择用新目录替换全部已有目录，包括手动目录；保留并添加模式保留原目录备份；全部替换模式核验成功后自动删除本次旧目录及内部目录恢复副本，不能再用它们恢复，失败时保留恢复材料。两种模式均保留PDF备份、原笔迹及其他配置。换输入文件或重开界面时恢复默认保留模式；未知结构、页面映射或文件变化时停止。PDF已含本次JSON的相同书签时，可在“更多操作与恢复”只同步目录，不必再生成PDF。无需无障碍服务，也不联网。\n\n核对新PDF、享做目录、跳转和原笔迹正常后，保存并强行停止享做，可用一个“清理旧文件与备份”按钮。清单列出本次成功记录关联的外部旧PDF、旧目录及应用内恢复备份，确认后统一清理。清理后无法再靠这些备份恢复。保留当前PDF、活动catalog/temp、笔迹和其他配置；原始JSON只按独立勾选处理，不纳入统一清理。不会扫描旧版失去关联的备份、其他任务或未知文件。文件变化时停止；中断可按原清单重试。\n\n只有PDF及所选享做同步均成功后才可选删除JSON。中断保留未删除备份与进度；第3节目录恢复只恢复同步前目录，不改PDF和笔迹。清理前可导出备份；不要卸载程序或清除数据。\n\n加密或含签名字段的PDF会拒绝处理。桌面OCR、批量功能尚未移植。\n\n版本 "+getString(R.string.app_version)+" · GNU AGPL v3\nPDFBox Android / Gson: Apache 2.0\nBouncy Castle: MIT").setPositiveButton("知道了",null).show());
+            "选择PDF与JSON，或粘贴共享存储路径 → 读取并预览 → 滑动目录、点击标题或页码核对目标页 → 生成并保存。目录标题和目标页在独立两栏显示。\n\n浏览文件默认使用应用内列表，右上角固定“取消选择”，不选文件也能返回；空目录和加载中均可取消。列表只浏览已授权位置，返回上级不会访问授权外的目录。首次授权或“更多文件来源”仍使用系统界面；可用系统返回取消；若无法返回，回到系统主屏幕后点击本工具图标，可回到原界面并取消未完成的系统选择。顶部也保留“取消系统选择”入口。路径输入和读取也可在顶部取消，原选择及核对状态保留。\n\n第3节的“处理选项”可切换同名替换/另存、享做目录保留添加/全部替换以及成功后删除JSON。“更多操作与恢复”保留单独同步、保存已生成PDF、导出备份和恢复消失PDF；未完成任务的恢复入口直接显示。\n\n同名替换需要原文件夹的读写授权：先在该文件夹写好并核验新PDF，再将原件改名为备份，最后把新PDF改为原名。程序不截断或自动删除原PDF。文件来源不支持这些操作时，请另存。\n\n同步享做目录默认勾选，仅适配已识别的共享存储资源文件。请先保存笔记，并到系统设置强行停止享做，不要清除数据。默认保留已有享做目录并添加新目录，也可选择用新目录替换全部已有目录，包括手动目录；保留并添加模式保留原目录备份；全部替换模式核验成功后自动删除本次旧目录及内部目录恢复副本，不能再用它们恢复，失败时保留恢复材料。两种模式均保留PDF备份、原笔迹及其他配置。换输入文件或重开界面时恢复默认保留模式；未知结构、页面映射或文件变化时停止。PDF已含本次JSON的相同书签时，可在“更多操作与恢复”只同步目录，不必再生成PDF。无需无障碍服务。PDF处理离线完成；“版本与更新”默认每天检查一次本项目GitHub正式版，可关闭自动检查。确认下载并校验后可安装更新，安装仍需系统确认，应用数据保留。\n\n核对新PDF、享做目录、跳转和原笔迹正常后，保存并强行停止享做，可用一个“清理旧文件与备份”按钮。清单列出本次成功记录关联的外部旧PDF、旧目录及应用内恢复备份，确认后统一清理。清理后无法再靠这些备份恢复。保留当前PDF、活动catalog/temp、笔迹和其他配置；原始JSON只按独立勾选处理，不纳入统一清理。不会扫描旧版失去关联的备份、其他任务或未知文件。文件变化时停止；中断可按原清单重试。\n\n只有PDF及所选享做同步均成功后才可选删除JSON。中断保留未删除备份与进度；第3节目录恢复只恢复同步前目录，不改PDF和笔迹。清理前可导出备份；不要卸载程序或清除数据。\n\n加密或含签名字段的PDF会拒绝处理。桌面OCR、批量功能尚未移植。\n\n版本 "+getString(R.string.app_version)+" · GNU AGPL v3\nPDFBox Android / Gson: Apache 2.0\nBouncy Castle: MIT").setPositiveButton("知道了",null).show());
         button(root,"许可与开源说明",this::showLicenses);
     }
     private void pick(int request){
@@ -251,6 +261,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
+        if(updates!=null&&updates.onActivityResult(request))return;
         if(request==systemPickerRequest)systemPickerRequest=0;
         updateButtons();
         if(result!=RESULT_OK||data==null||data.getData()==null){clearPendingPath();status.setText("已取消文件选择 / 授权，原来的选择保留。可以继续操作。");return;}
@@ -344,6 +355,7 @@ public final class MainActivity extends Activity {
             String settings=overwrite.isChecked()?"原路径、原名称替换":"另存带目录副本";
             settings+=overwrite.isChecked()&&syncEnjoy.isChecked()?(replaceCatalog.isChecked()?" · 享做目录全部替换":" · 享做目录保留并添加"):" · 不同步享做目录";
             settings+=deleteJson.isChecked()?" · 成功后删除JSON":" · 保留JSON";outputSettings.setText(settings+"\n可展开“处理选项”调整。");}
+        if(updates!=null)updates.refresh();
     }
     private void setBusy(boolean value,String message){
         busy=value;status.setText(message);updateButtons();
@@ -909,5 +921,5 @@ public final class MainActivity extends Activity {
         pagePane.setLayoutParams(wide?new LinearLayout.LayoutParams(0,-2,1):new LinearLayout.LayoutParams(-1,-2));
         if(filePicker!=null&&filePicker.isShowing())filePicker.resize();
     }
-    @Override protected void onDestroy(){if(filePicker!=null)filePicker.dismiss();previewGeneration++;if(readJob!=null){readJob.cancelled=true;if(readJob.future!=null)readJob.future.cancel(true);readers.execute(readJob::closeInput);}readers.shutdown();worker.shutdown();clearImage();super.onDestroy();}
+    @Override protected void onDestroy(){if(updates!=null)updates.close();if(filePicker!=null)filePicker.dismiss();previewGeneration++;if(readJob!=null){readJob.cancelled=true;if(readJob.future!=null)readJob.future.cancel(true);readers.execute(readJob::closeInput);}readers.shutdown();worker.shutdown();clearImage();super.onDestroy();}
 }

@@ -1,10 +1,10 @@
 # PDF 书签目录工具 Android
 
-**v0.1.9 正式版**。选择 PDF 和目录 JSON，生成包含完整多级书签的 PDF；已识别的享做笔记资源 PDF 还可同步享做目录。文件在本地处理，无需无障碍服务、联网或全盘访问权限。
+选择 PDF 和目录 JSON，生成包含完整多级书签的 PDF；已识别的享做笔记资源 PDF 还可同步享做目录。PDF处理在本地完成，无需无障碍服务或全盘访问权限；更新功能仅连接本项目GitHub。
 
-[下载 APK](https://github.com/Zerozero05/PDF_Bookmarks_Android/releases/download/v0.1.9/PDF_Bookmarks_v0.1.9_android.apk) · [发行说明与源码](https://github.com/Zerozero05/PDF_Bookmarks_Android/releases/tag/v0.1.9) · [完整使用说明](docs/USER_GUIDE.md) · [SHA-256 校验清单](https://github.com/Zerozero05/PDF_Bookmarks_Android/releases/download/v0.1.9/SHA256SUMS.txt)
+[已发布 APK（v0.1.9）](https://github.com/Zerozero05/PDF_Bookmarks_Android/releases/download/v0.1.9/PDF_Bookmarks_v0.1.9_android.apk) · [发行说明与源码](https://github.com/Zerozero05/PDF_Bookmarks_Android/releases/tag/v0.1.9) · [完整使用说明](docs/USER_GUIDE.md) · [SHA-256 校验清单](https://github.com/Zerozero05/PDF_Bookmarks_Android/releases/download/v0.1.9/SHA256SUMS.txt)
 
-当前源码准备 **v0.1.10 本地候选，尚未发布**：文件浏览页增加固定取消入口，并整理主界面。上述下载仍是 v0.1.9；新增交互及验证范围见[本次完整记录](CHANGELOG.md#v0-1-10)。
+当前源码为 **v1.0.0 本地候选，尚未发布**：新增正式版自动检测、确认下载与系统安装，包含此前文件浏览取消和界面整理。上述公开下载仍是v0.1.9；首次使用更新器需手动覆盖安装v1.0.0，后续版本可在程序中检查。详见[自动更新](docs/AUTO_UPDATE.md)及[本次完整记录](CHANGELOG.md#v1-0-0)。
 
 ## 功能
 
@@ -15,6 +15,7 @@
 | 两栏核对与预览 | 标题与目标页分栏，目录独立滚动；点击整行预览目标页 |
 | 替换或另存 | 默认同路径同名替换，先生成、核验并备份；也可取消替换后另存副本 |
 | 享做目录同步 | 默认保留已有目录并添加，也可全部替换；PDF 已有匹配书签时可仅同步目录 |
+| 自动检测与安装更新 | 默认启动／前台每天最多检查一次GitHub最新正式版，可关闭或手动检查；确认下载并核验后交给系统安装，保留应用数据 |
 | 备份与清理 | 支持原 PDF 备份导出、未完成任务恢复及按清单清理；删除来源 JSON 默认关闭 |
 
 当前维护范围为 **PDF＋JSON**，只添加内部书签，不插入正文目录页、不修改页面标签。OCR／自动提取、完整编辑工作台及批量处理尚未实现，见[功能范围](docs/FEATURES.md)。
@@ -59,6 +60,7 @@ PDF 内部书签和享做目录是独立选择：第2节控制是否覆盖整棵
 
 | 版本／更新 | 日期 | 主要变更 |
 | --- | --- | --- |
+| v1.0.0（本地候选，未发布） | 2026-10-21 | 1、新增：自动／手动检测GitHub正式版，确认下载、校验和系统安装。<br>2、兼容：保留旧功能、数据及升级签名；未完成文件任务时不发起安装。<br>3、说明：新增联网和请求安装权限，首次手动覆盖安装后启用更新器。<br>[本次完整记录](CHANGELOG.md#v1-0-0) |
 | v0.1.10（本地候选，未发布） | 2026-10-21 | 1、修复：应用内文件列表固定提供取消／返回上级，旧查询不改动已选文件。<br>2、调整：文件选择、主次按钮、状态提示与横竖布局；保留原有处理和恢复功能。<br>3、验证：184 项回归及新提供127页／47条目录的实文件检查通过；2 项旧样本未运行，设备界面待核对。<br>[本次完整记录](CHANGELOG.md#v0-1-10) |
 | 文档更新 | 2026-10-20 | 1、整理：使用说明与维护入口，合并重复介绍。<br>2、补充：全部历史更新摘要及逐次详情链接。<br>[本次完整记录](CHANGELOG.md#docs-2026-10-20) |
 | v0.1.9 正式版确认 | 2026-10-09 | 1、确认：接收目标平板总体使用验收。<br>2、完善：正式版状态与使用说明，沿用原 APK、版本和签名。<br>[本次完整记录](CHANGELOG.md#formal-2026-10-09) |

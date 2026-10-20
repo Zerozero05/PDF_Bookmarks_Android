@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_panel">版本与更新 · v%1$s</string>
+    <string name="update_current">当前版本 v%1$s。更新只来自本项目GitHub；PDF处理仍可离线使用。</string>
+    <string name="update_download">下载更新 v%1$s</string>
+    <string name="update_install">安装更新 v%1$s</string>
+    <string name="update_check_manual">正在检查GitHub正式版…可取消，不影响当前文件。</string>
+    <string name="update_check_background">正在后台检查GitHub正式版…可取消。</string>
+    <string name="update_none">当前 v%1$s，暂无更高的正式版。</string>
+    <string name="update_found">发现 v%1$s · %2$s%3$s</string>
+    <string name="update_downloading">正在下载 v%1$s…可随时取消。</string>
+    <string name="update_progress">正在下载 %1$d%% · %2$s / %3$s</string>
+    <string name="update_verifying">下载完成，正在核对APK版本和升级签名…</string>
+    <string name="update_ready">v%1$s 已下载并校验。完成当前任务后，点击“安装更新”。</string>
+    <string name="update_install_stopped">%1$s 已停止安装，可重新下载；当前程序保留。</string>
+    <string name="update_old_cache">当前版本 v%1$s。更新已完成或缓存不再适用。</string>
+    <string name="update_restored">上次下载的 v%1$s 已重新校验，可点击安装；不会自动安装。</string>
+    <string name="update_failed">%1$s 当前版本可继续处理文件。</string>
+    <string name="update_browser_missing">未找到浏览器。可在浏览器打开GitHub项目的Releases页面。</string>
+    <string name="update_offer_title">发现新版本 v%1$s</string>
+    <string name="update_offer_message">当前 v%1$s · 下载 %2$s\n\n%3$s\n\n更新将保留应用数据，安装仍需系统确认。</string>
+</resources>

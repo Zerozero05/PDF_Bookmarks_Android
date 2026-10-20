@@ -1,5 +1,20 @@
 # Android 验证记录
 
+## v1.0.0 自动更新候选 — 2026-10-21
+
+基线为v0.1.10草稿提交`2a9a46f91b7d9568ce9fb64c388ee98a7607888d`，保留其文件选择修复、全部旧功能和有效交付；远端main仍为`98d9ccd8b6c95b8e165eee57d625a821e42b3ba6`。本次新增更新功能，VERSION1.0.0/code12；没有新标签、Release或公开发行资产。
+
+- 当前JDK17/SDK35/Gradle8.9，最终`assembleDebug lintDebug testDebugUnitTest --offline`实际成功。212项：210通过、0失败/错误、2跳过；原186项保留，新增UpdateReleaseTest 12项和UpdateClientTest 14项全部通过。14份最终XML已归档。
+- 两项旧私人70条JSON回归仍缺输入：`TocParserTest.realUserJasminumKeepsAllSeventyRowsWithoutPageOffset`及`EnjoyCatalogTest.exactFixtureMatchesVerifiedMergeAndIsIdempotent`，用户已确认暂时没有；没有删测试/断言，也不计入通过。可用的享做混合页码真实样本仍参与回归。
+- 新回归覆盖数值版本比较、稳定版/附件/地址/大小/摘要约束、24小时间隔/关闭/时钟回退、APK身份/code/系统/证书拒绝、官方重定向、重定向前拒绝其他站点、循环限制、下载取消/短包/超量/哈希错误、旧目标保护、缓存变化、网络失败/限流/元数据大小限制。网络故障测试使用注入响应与真实文件IO，不冒充实际Android安装。
+- 最终lint0错误/0fatal/29警告，与v0.1.10现有分类和数量相同，未放宽或忽略检查。首轮新界面产生的SetTextI18n及UsableSpace提示已通过格式化资源和只读可用空间检查修正，未主动清理其他缓存；首轮及修正后日志/报告保留。
+- 使用本次真实签名APK（9,388,609字节，SHA256 `bbf155f481b92a3a9d0a3d7ab25c5c68a5cb93ffb91196e9ba890c5fe445c149`）作为从旧v0.1.10/code11升级的输入，生产UpdateClient/UpdateRelease实际完成模拟Release/校验清单的解析、完整APK流式传输、SHA256与真实SDK元数据的身份约束，输出逐字节一致。Release响应仅在宿主注入，APK字节与aapt/apksigner数据是真实文件；没有发布测试Release。Android PackageManager解析与系统安装器未在电脑运行。
+- 生产UpdateClient还实际HTTPS访问本项目latest API成功，以当前1.0.0检查返回没有更高正式版。首次沙箱Socket权限拒绝的日志保留；经正式工具权限审批后原检查器成功，不关闭TLS或改用未知来源，不把沙箱限制说成平板故障。
+- 最终APK实际包名cn.local.pdfbookmarks、versionName1.0.0/code12、min26/target35、原升级证书、v2签名及zipalign通过。新增仅INTERNET/REQUEST_INSTALL_PACKAGES，主界面singleTask保留，新增私有只读APK提供者。包名/原证书/原PDF任务配置不迁移。
+- 原PDF引擎、解析、Enjoy同步/合并、替换/清理事务、FilePickerState/Dialog、全部11份旧测试源及原资源/许可保持字节不变。已提供的127页PDF/47条JSON上一阶段真实内容验证继续适用，本次不重写原件、不以该47条输入替代缺失70条断言。
+- 新版D19–D32设备触摸、实际权限、APK内容授权、安装和数据保留尚未执行；原版总体用户验收不自动覆盖新版本。使用原签名本地候选保留数据覆盖安装后核对，详见[设备矩阵](docs/DEVICE_ACCEPTANCE.md#v100-更新流程验收)。后续从v1.0.0升级未来正式版的设备测试尚不具备已发布输入，不虚构在线更新成功。
+- 参考来源与采用内容见[AUTO_UPDATE](docs/AUTO_UPDATE.md#本次参考及验证边界)，没有新运行依赖或外部代码。源码、APK/清单匹配与同提交云端结果随最终候选和草稿PR记录；公开发行需本次明确确认。
+
 ## v0.1.10 本地候选 — 2026-10-21
 
 基线为远端main `98d9ccd8b6c95b8e165eee57d625a821e42b3ba6`，仅在此版本增量修改。候选VERSION0.1.10/code11；没有推送新版标签、公开发行附件或启动公开发布流程。
