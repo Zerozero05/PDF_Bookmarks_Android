@@ -8,9 +8,10 @@ android {
         applicationId 'cn.local.pdfbookmarks'
         minSdk 26
         targetSdk 35
-        versionCode 10
+        versionCode 12
         versionName appVersion
         resValue 'string', 'app_version', appVersion
+        resValue 'string', 'update_signer_sha256', rootProject.file('SIGNING_CERTIFICATE.sha256').text.trim()
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
