@@ -97,11 +97,11 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle state){
         appearance=UiAppearance.applyBeforeCreate(this);super.onCreate(state);PDFBoxResourceLoader.init(getApplicationContext());enjoy=new EnjoyDirectorySync(this);
         updates=new AppUpdates(this,this::canInstallUpdate,b->styleButton(b,false));
-        appearance.applySystemBars(this);
         // 重建Activity时旧工作线程可能尚未结束；每次使用独立目录避免交叉读写。
         File session=new File(getCacheDir(),"job-"+UUID.randomUUID());session.mkdirs();
         sourceFile=new File(session,"source.pdf");readyFile=new File(session,"ready.pdf");
         buildUi();
+        appearance.applySystemBars(this);
         if(state!=null)systemPickerRequest=state.getInt("systemPickerRequest",0);
         SharedPreferences prefs=getPreferences(MODE_PRIVATE);
         String p=prefs.getString("pdf",null),j=prefs.getString("json",null);

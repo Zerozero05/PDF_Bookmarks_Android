@@ -1,5 +1,20 @@
 # Android 验证记录
 
+<a id="candidate-v111-2026-10-22"></a>
+## v1.1.1 启动修复候选 — 2026-10-22
+
+用户在MRO-W00／HarmonyOS4.2／API31实际安装v1.1.0/code13后，点击图标闪退或白屏。只读取得该应用22份崩溃记录；堆栈明确为`PhoneWindow.getInsetsController()`内部decor为空，来自`UiAppearance.applySystemBars:110 → MainActivity.onCreate:100`。此前宿主264项回归不执行Android Activity生命周期，不能证明真实启动通过；新设备失败不归因于PDF、JSON或原笔记，也不以猜测撤回图标和新功能。
+
+- 最小修复：将首次系统栏配色调用移到主界面创建之后；配色方法先取得decor，在其附着后通过View获取系统栏控制器。保留系统／浅／深配色、全部v1.1.0界面和原业务，不捕获并忽略NullPointerException，也不删除功能规避错误。VERSION1.1.1/code14，包名、原签名、min26/target35、原两权限和依赖保持。
+- 增加设备专用原生Instrumentation `StartupSmoke`：真实启动Main、检查完整界面及主线程空闲，系统／浅／深三模式系统栏调用，再重建Activity并重复，共6次配色检查；不更改外观偏好，不选择或处理书籍。无需AndroidX／Robolectric或新依赖；测试代码只进入单独测试APK，普通应用不增加测试入口。失败返回堆栈，框架致命崩溃仍视为失败。
+- 本地离线`assembleDebug assembleDebugAndroidTest lintDebug testDebugUnitTest`实际成功，71项任务；266项中264通过、0失败／错误、2旧70条私人输入缺失跳过，全部原18份单测源保留。lint0错误／26警告，分类与上一候选相同。设备runner另经真实SDK35编译通过；编译通过不计为真机执行通过。
+- 修复APK10659037字节，SHA256`614277b650edb3b8e3ef71878ac44ea02eed310a1bffa05c0bbca1a5a0e8d644`；临时测试APK11378字节，两者原证书均核验通过。该修复未改PDF引擎／JSON解析／享做两模式／暂存替换／清理恢复／更新核心；旧源码及v1.1.0候选保留，没有覆盖旧交付。
+- 获用户明确确认后，已用原签名在该MRO-W00上保留数据覆盖安装1.1.1/code14，安装返回Success；userId及firstInstallTime前后一致，未卸载主应用或清数据。实际截图已目视确认主标题、外观入口及JSON文件选择页完整显示，当前应用持续存活，两次进程核对相同，当前PID崩溃缓冲无FATAL。`am start -W`返回Status ok，但意图送给已运行的前台实例；不能把这次命令称为额外冷启动。设备当前由用户操作，未强停或中断其界面。
+- 临时测试组件被设备拒绝安装，返回`INSTALL_FAILED_ABORTED: User rejected permissions`；包列表核实组件不存在，故无需移除，也未运行Instrumentation。没有关闭安全检查、强装或把编译的6次配色／recreate写成设备通过。设备主程序正常显示与持续运行的直接证据有效，自动化生命周期检查保持未执行。
+- [D49–D51](docs/DEVICE_ACCEPTANCE.md#v111-启动修复验收)按实际范围记录：启动／覆盖安装部分已通过；旧授权及恢复资料访问、三主题／字体／旋转／分屏、完整旧功能及真实文档处理没有因此全部通过。原D33–D48其余交互仍需分别验证。本轮未操作PDF／JSON／笔记、清设备日志或更改系统安全设置；新图标及全部原业务核心保留。
+
+本轮仍为本地候选，未推标签／公开发行或新版附件。以下旧候选的设备待测／当时验证状态作为历史保留，以本段新证据为准。
+
 <a id="candidate-v110-2026-10-22"></a>
 ## v1.1.0 核对与界面候选 — 2026-10-22
 

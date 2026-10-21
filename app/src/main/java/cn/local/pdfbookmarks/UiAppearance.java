@@ -105,15 +105,18 @@ public final class UiAppearance {
 
     public void applySystemBars(Activity activity){
         Window window=activity.getWindow();
+        View decor=window.getDecorView();
         if(Build.VERSION.SDK_INT<35){window.setStatusBarColor(page);window.setNavigationBarColor(page);}
         if(Build.VERSION.SDK_INT>=30){
-            WindowInsetsController controller=window.getInsetsController();
-            if(controller!=null){
-                int mask=WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-                controller.setSystemBarsAppearance(dark?0:mask,mask);
-            }
+            // The controller is available after attachment. PhoneWindow may have no decor during onCreate.
+            decor.post(()->{
+                WindowInsetsController controller=decor.getWindowInsetsController();
+                if(controller!=null){
+                    int mask=WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                    controller.setSystemBarsAppearance(dark?0:mask,mask);
+                }
+            });
         }else{
-            View decor=window.getDecorView();
             int mask=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
             decor.setSystemUiVisibility(dark?decor.getSystemUiVisibility()&~mask:decor.getSystemUiVisibility()|mask);
         }
