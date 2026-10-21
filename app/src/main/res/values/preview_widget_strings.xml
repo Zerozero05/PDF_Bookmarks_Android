@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="preview_image_description">PDF 页面预览；双指缩放，双击放大或适合页面</string>
+    <string name="preview_zoom_in">放大预览</string>
+    <string name="preview_zoom_out">缩小预览</string>
+    <string name="preview_zoom_fit">适合页面</string>
+    <string name="preview_resize_description">调整目录与预览比例；拖动或使用方向键</string>
+    <string name="preview_resize_first">增大目录区域</string>
+    <string name="preview_resize_second">增大预览区域</string>
+    <string name="preview_resize_reset">恢复均分</string>
+    <item name="preview_zoom_in_action" type="id" />
+    <item name="preview_zoom_out_action" type="id" />
+    <item name="preview_zoom_fit_action" type="id" />
+    <item name="preview_first_larger_action" type="id" />
+    <item name="preview_second_larger_action" type="id" />
+    <item name="preview_split_reset_action" type="id" />
+</resources>

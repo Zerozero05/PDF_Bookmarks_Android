@@ -3,12 +3,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application android:allowBackup="false" android:largeHeap="true"
-        android:icon="@drawable/ic_book" android:label="PDF目录工具" android:theme="@style/AppTheme"
+        android:icon="@mipmap/ic_launcher" android:label="PDF目录工具" android:theme="@style/AppTheme"
         android:supportsRtl="true" android:usesCleartextTraffic="false">
         <provider android:name=".UpdateApkProvider" android:authorities="${applicationId}.updates"
             android:exported="false" android:grantUriPermissions="true" />
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
-            android:configChanges="orientation|screenSize|keyboardHidden">
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|fontScale|smallestScreenSize|screenLayout">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

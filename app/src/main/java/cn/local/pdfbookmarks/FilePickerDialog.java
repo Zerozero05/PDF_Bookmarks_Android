@@ -3,8 +3,13 @@ package cn.local.pdfbookmarks;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.UriPermission;
+import android.content.res.ColorStateList;
 import android.database.Cursor;
+import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.CancellationSignal;
 import android.provider.DocumentsContract;
@@ -29,10 +34,10 @@ import java.util.function.Consumer;
 
 /** 只读浏览已授予的SAF范围；取消按钮不参与查询任务的忙碌状态。 */
 final class FilePickerDialog extends Dialog {
-    private static final int INK=0xff1d3439,ACCENT=0xff147a70;
     private static final String[] COLUMNS={DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE};
     private final Activity activity;
+    private final UiAppearance appearance;
     private final FilePickerState state;
     private final ExecutorService queries=Executors.newCachedThreadPool();
     private CancellationSignal signal;
@@ -42,17 +47,19 @@ final class FilePickerDialog extends Dialog {
 
     FilePickerDialog(Activity activity,boolean pdf,Consumer<Uri> selected,Runnable cancelled,
                      Runnable systemPicker,Runnable authorizeFolder){
-        super(activity);this.activity=activity;state=new FilePickerState(pdf);setOwnerActivity(activity);
+        super(UiAppearance.load(activity).dialogContext(activity));this.activity=activity;
+        appearance=UiAppearance.load(activity);state=new FilePickerState(pdf);setOwnerActivity(activity);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        LinearLayout shell=column();shell.setPadding(dp(20),dp(18),dp(20),dp(16));shell.setBackgroundColor(0xfff4f7f8);
-        LinearLayout header=new LinearLayout(activity);header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView heading=text(pdf?"选择 PDF":"选择目录 JSON",21);heading.setTypeface(null,Typeface.BOLD);
+        LinearLayout shell=column();shell.setPadding(space(20),space(18),space(20),space(16));shell.setBackgroundColor(appearance.page);
+        LinearLayout header=new LinearLayout(getContext());header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView heading=text(getContext().getString(pdf?R.string.picker_pdf_title:R.string.picker_json_title),21);heading.setTypeface(null,Typeface.BOLD);
         header.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
-        Button cancel=action("取消选择",this::cancel);header.addView(cancel);shell.addView(header);
-        location=text("已授权的位置",15);location.setPadding(0,dp(14),0,dp(8));shell.addView(location);
-        up=action("返回上级",()->{if(state.up())load();});shell.addView(up);
-        notice=text("正在读取文件位置…",14);notice.setPadding(0,dp(12),0,dp(12));shell.addView(notice);
-        ListView list=new ListView(activity);list.setDividerHeight(dp(1));
+        Button cancel=action(getContext().getString(R.string.picker_cancel),this::cancel);header.addView(cancel);shell.addView(header);
+        location=text(getContext().getString(R.string.picker_granted_locations),15);location.setPadding(0,space(14),0,space(8));shell.addView(location);
+        up=action(getContext().getString(R.string.picker_up),()->{if(state.up())load();});shell.addView(up);
+        notice=text(getContext().getString(R.string.picker_loading_locations),14);notice.setPadding(0,space(12),0,space(12));notice.setTextColor(appearance.secondaryText);shell.addView(notice);
+        ListView list=new ListView(getContext());list.setDivider(new ColorDrawable(appearance.outline));list.setDividerHeight(dp(1));
+        list.setBackgroundColor(appearance.surface);list.setCacheColorHint(Color.TRANSPARENT);
         adapter=new BaseAdapter(){
             @Override public int getCount(){return state.entries().size();}
             @Override public Object getItem(int position){return state.entries().get(position);}
@@ -61,15 +68,22 @@ final class FilePickerDialog extends Dialog {
                 LinearLayout row;
                 if(recycled instanceof LinearLayout)row=(LinearLayout)recycled;
                 else{
-                    row=column();row.setPadding(dp(12),dp(12),dp(12),dp(12));row.setMinimumHeight(dp(64));
-                    row.setBackgroundColor(0xffffffff);row.addView(text("",16));row.addView(text("",13));
+                    row=column();row.setPadding(space(12),space(12),space(12),space(12));
+                    row.setMinimumHeight(dp(Math.max(appearance.touchDp(),appearance.spacingDp(64))));
+                    StateListDrawable background=new StateListDrawable();
+                    background.addState(new int[]{android.R.attr.state_activated},new ColorDrawable(appearance.selectedRow));
+                    background.addState(new int[]{android.R.attr.state_selected},new ColorDrawable(appearance.selectedRow));
+                    background.addState(new int[]{android.R.attr.state_focused},new ColorDrawable(appearance.selectedRow));
+                    background.addState(new int[]{},new ColorDrawable(appearance.surface));
+                    row.setBackground(new RippleDrawable(ColorStateList.valueOf((appearance.accent&0x00ffffff)|0x29000000),background,null));
+                    row.addView(text("",16));row.addView(text("",13));
                 }
                 FilePickerState.Entry entry=state.entries().get(position);
                 row.setTag(entry);
                 ((TextView)row.getChildAt(0)).setText(entry.name);
-                TextView detail=(TextView)row.getChildAt(1);detail.setTextColor(0xff52676c);
-                detail.setText((entry.folder?"文件夹  ›":(pdf?"PDF 文件":"JSON 目录文件"))
-                        +(state.location()==null?" · "+locationName(entry):""));return row;
+                TextView detail=(TextView)row.getChildAt(1);detail.setTextColor(appearance.secondaryText);
+                String type=getContext().getString(entry.folder?R.string.picker_folder_type:(pdf?R.string.picker_pdf_type:R.string.picker_json_type));
+                detail.setText(state.location()==null?getContext().getString(R.string.picker_location_detail,type,locationName(entry)):type);return row;
             }
         };
         list.setAdapter(adapter);list.setOnItemClickListener((parent,view,index,id)->{
@@ -79,10 +93,10 @@ final class FilePickerDialog extends Dialog {
             else{state.select(entry);dismiss();selected.accept(Uri.parse(entry.uri));}
         });
         shell.addView(list,new LinearLayout.LayoutParams(-1,0,1));
-        TextView hint=text("只显示已授权的文件夹和匹配文件。未选文件也能随时取消，原来的选择保留。",13);
-        hint.setPadding(0,dp(12),0,dp(6));shell.addView(hint);
-        shell.addView(action("添加文件夹授权…",()->{dismiss();authorizeFolder.run();}));
-        shell.addView(action("更多文件来源（系统）…",()->{dismiss();systemPicker.run();}));
+        TextView hint=text(getContext().getString(R.string.picker_scope_hint),13);hint.setTextColor(appearance.secondaryText);
+        hint.setPadding(0,space(12),0,space(6));shell.addView(hint);
+        shell.addView(action(getContext().getString(R.string.picker_authorize_folder),()->{dismiss();authorizeFolder.run();}));
+        shell.addView(action(getContext().getString(R.string.picker_more_sources),()->{dismiss();systemPicker.run();}));
         setContentView(shell);setCancelable(true);setCanceledOnTouchOutside(true);
         setOnCancelListener(dialog->cancelled.run());
         setOnDismissListener(dialog->{state.cancel();cancelQuery();queries.shutdown();});
@@ -91,28 +105,33 @@ final class FilePickerDialog extends Dialog {
     void resize(){
         Window window=getWindow();if(window==null)return;
         android.util.DisplayMetrics metrics=activity.getResources().getDisplayMetrics();
-        window.setLayout(Math.min(dp(840),metrics.widthPixels-dp(24)),Math.max(dp(280),(int)(metrics.heightPixels*0.9f)));
+        View decor=activity.getWindow().getDecorView();
+        int width=decor.getWidth()>0?decor.getWidth():metrics.widthPixels;
+        int height=decor.getHeight()>0?decor.getHeight():metrics.heightPixels;
+        window.setLayout(Math.max(1,Math.min(dp(840),width-dp(24))),Math.max(1,Math.min(height-dp(16),Math.max(dp(280),(int)(height*.9f)))));
+        window.setBackgroundDrawable(new ColorDrawable(appearance.page));
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
     }
     private void cancelQuery(){CancellationSignal old=signal;signal=null;if(old!=null)queries.execute(old::cancel);}
     private void load(){
         cancelQuery();int token=state.beginLoad();FilePickerState.Entry folder=state.location();
-        up.setEnabled(folder!=null);location.setText(folder==null?"已授权的位置":locationName(folder));
-        notice.setText("正在读取列表…可随时取消。");adapter.notifyDataSetChanged();
+        up.setEnabled(folder!=null);location.setText(folder==null?getContext().getString(R.string.picker_granted_locations):locationName(folder));
+        setNotice(getContext().getString(R.string.picker_loading),false);adapter.notifyDataSetChanged();
         CancellationSignal query=new CancellationSignal();signal=query;
         queries.execute(()->{
             try{
                 List<FilePickerState.Entry> found=folder==null?roots(query):children(Uri.parse(folder.uri),query);
                 activity.runOnUiThread(()->{
                     if(!isShowing()||activity.isDestroyed()||!state.publish(token,found))return;
-                    adapter.notifyDataSetChanged();notice.setText(state.entries().isEmpty()
-                            ?(folder==null?"还没有可用位置。可添加文件夹授权，或选择更多文件来源。":"这个文件夹没有匹配文件。可返回上级或取消选择。")
-                            :"点击文件夹进入；点击文件完成选择。");
+                    adapter.notifyDataSetChanged();setNotice(getContext().getString(state.entries().isEmpty()
+                            ?(folder==null?R.string.picker_no_locations:R.string.picker_no_files)
+                            :R.string.picker_choose_hint),false);
                 });
             }catch(Exception e){
                 activity.runOnUiThread(()->{
                     if(!isShowing()||activity.isDestroyed()||!state.publish(token,new ArrayList<>()))return;
-                    adapter.notifyDataSetChanged();notice.setText("无法读取此位置："+(e.getMessage()==null?e.getClass().getSimpleName():e.getMessage())+"。可返回上级、重新授权或取消。");
+                    adapter.notifyDataSetChanged();setNotice(getContext().getString(R.string.picker_read_error,
+                            e.getMessage()==null?e.getClass().getSimpleName():e.getMessage()),true);
                 });
             }
         });
@@ -157,11 +176,16 @@ final class FilePickerDialog extends Dialog {
         try{return DocumentsContract.getDocumentId(uri).replaceFirst("^primary:","/内部存储/");}
         catch(IllegalArgumentException e){return entry.name;}
     }
+    private void setNotice(String value,boolean failure){
+        notice.setText(value);notice.setTextColor(failure?appearance.error:appearance.secondaryText);
+        notice.setBackgroundColor(failure?appearance.errorBg:Color.TRANSPARENT);
+    }
     private int dp(int value){return Math.round(value*activity.getResources().getDisplayMetrics().density);}
-    private LinearLayout column(){LinearLayout view=new LinearLayout(activity);view.setOrientation(LinearLayout.VERTICAL);return view;}
-    private TextView text(String value,int size){TextView view=new TextView(activity);view.setText(value);view.setTextSize(size);view.setTextColor(INK);return view;}
+    private int space(int value){return dp(appearance.spacingDp(value));}
+    private LinearLayout column(){LinearLayout view=new LinearLayout(getContext());view.setOrientation(LinearLayout.VERTICAL);return view;}
+    private TextView text(String value,int size){TextView view=new TextView(getContext());view.setText(value);appearance.styleText(view,size);return view;}
     private Button action(String label,Runnable action){
-        Button button=new Button(activity);button.setText(label);button.setTextSize(14);button.setTextColor(ACCENT);
-        button.setAllCaps(false);button.setMinHeight(dp(48));button.setOnClickListener(view->action.run());return button;
+        Button button=new Button(getContext());button.setText(label);appearance.styleButton(button,false);button.setTextSize(appearance.textSp(14));
+        button.setOnClickListener(view->action.run());return button;
     }
 }

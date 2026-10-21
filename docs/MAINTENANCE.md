@@ -14,9 +14,21 @@
 
 ## 代码与兼容性
 
-MainActivity负责选文件、两栏预览和用户确认；TocParser负责两种JSON和映射；PdfBookmarks负责增量写入/结果校验；PathDocuments/StagedDocuments负责真实SAF身份与授权；StagedReplacement负责可恢复改名；BackupCleanup只负责用户确认后的旧备份门禁。精确修改对应模块，不重写未改变的引擎。
+MainActivity负责选文件、任务编排和用户确认；ReviewWorkspace负责目录搜索／折叠、抽查与页码调整入口；DirectoryViewModel保持条目身份和显示过滤，PageAdjustments保持完整页码工作副本；ZoomImageView和ResizablePreviewLayout负责缩放及分栏；UiAppearance负责独立显示偏好；TaskOutcome只记录分项结果；TocParser负责两种JSON和映射；PdfBookmarks负责增量写入/结果校验；PathDocuments/StagedDocuments负责真实SAF身份与授权；StagedReplacement负责可恢复改名；BackupCleanup只负责用户确认后的旧备份门禁。精确修改对应模块，不重写未改变的引擎。
 
 保持cn.local.pdfbookmarks、既有SharedPreferences键、files/pdf-backups目录及两种输入格式兼容。新增字段缺失必须保守处理：旧版没有lastReplacement关联时不能猜删备份。升级不清除应用数据，不自动执行pending任务，不自动删除内部备份。v0.1.8仅在用户确认完整清单后允许统一清理本次关联内部备份；清理后不能恢复。pendingCleanup保存授权快照，未完成时阻止新写入；可先保存原快照到files/cleanup-records后结束清理并保留所有剩余旧件，不能丢弃记录来获得干净状态。未来如需迁移，先保存原值，失败保留原数据，并补真实兼容回归。
+
+## v1.1.0 核对与界面维护
+
+当前候选为 1.1.0／code13，尚未发布；公开正式版仍为 v1.0.0。搜索、折叠和行选择使用原条目索引，生成／同步必须读取完整的 `PageAdjustments.rows()`，不能误用过滤后的可见列表。页码试算基于导入后的实际目标页，每次从同一基准计算；试算未明确应用、参数修改或校验失败时不改已应用结果。应用及恢复映射须使旧核对和生成结果失效，来源 JSON 不改写。
+
+外观设置使用独立的 `ui_appearance`，左右／上下分栏比例使用 `review_ui`；旧 Activity 任务键、`app_updates`、目录模式和 JSON 删除默认值保持。主题、字号、间距和窗口变化直接更新当前视图，不调用 Activity 重建来丢弃运行中任务；进程死亡恢复仍按原持久事务门禁处理，搜索／页码工作副本不宣称持久草稿。新增弹窗必须取当前主题 context，并同步文字、控件、错误、选中与禁用颜色，不能只改变页面背景。
+
+底部主操作的文字和动作须一致；已生成待保存结果走保存入口，不重复生成。任务阶段由真实处理点触发，无法量化时保持不定进度；结果卡片分别报告生成、保存、享做同步、JSON 和清理状态，不把 PDF 成功覆盖其他部分失败，保留实际保存位置与可复制原因。结果文案不改变事务检查、授权、恢复或删除的判定。
+
+方法参考 Android 官方[自适应布局](https://developer.android.com/develop/ui/views/layout/canonical-layouts)、[拖动与缩放手势](https://developer.android.com/develop/ui/views/touch-and-input/gestures/scale)及[按文件名分离 SharedPreferences](https://developer.android.com/training/data-storage/shared-preferences)。本项目用现有原生 Views 实现，仅借鉴布局／API 方法，未复制外部代码、未迁移到 Compose、未添加运行依赖。新图标为经用户同意的内置 imagegen 生成资源 `drawable-nodpi/ic_book_v11.png`，旧 `ic_book.xml` 保留；`mipmap-anydpi/ic_launcher.xml` 按 Android 官方[自适应图标](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive)方法组合前景／背景，由系统启动器遮罩显示，不改写生成 PNG。
+
+新增测试应覆盖搜索／折叠下完整目录写入、映射不累加和失败不应用、窗口及显示切换保留任务，以及部分成功结果。UI 手势、键盘／触控笔、软键盘、深浅弹窗、覆盖升级和文件提供者仍须按[D33–D48](DEVICE_ACCEPTANCE.md#v110-核对与界面验收)真机核对；构建、JVM 状态测试和静态颜色计算分别证明，不能替代触摸截图或设备结果。v1.1.0 本轮没有真机连接，相关项如实待测，实际电脑检查由[VALIDATION](../VALIDATION.md)记录。
 
 ## 构建、版本及发布
 

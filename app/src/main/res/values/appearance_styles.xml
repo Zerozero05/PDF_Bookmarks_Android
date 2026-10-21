@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme.UiLight" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#147A70</item>
+        <item name="android:colorControlActivated">#147A70</item>
+        <item name="android:colorControlNormal">#52676C</item>
+        <item name="android:colorButtonNormal">#FFFFFF</item>
+        <item name="android:textColorPrimary">#1D3439</item>
+        <item name="android:textColorSecondary">#52676C</item>
+        <item name="android:textColorHint">#52676C</item>
+        <item name="android:colorBackground">#F4F7F8</item>
+        <item name="android:windowBackground">#F4F7F8</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#F4F7F8</item>
+        <item name="android:navigationBarColor">#F4F7F8</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="AppTheme.UiDark" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#7BD6C8</item>
+        <item name="android:colorControlActivated">#7BD6C8</item>
+        <item name="android:colorControlNormal">#B0C2C6</item>
+        <item name="android:colorButtonNormal">#19262A</item>
+        <item name="android:textColorPrimary">#E7EFF0</item>
+        <item name="android:textColorSecondary">#B0C2C6</item>
+        <item name="android:textColorHint">#B0C2C6</item>
+        <item name="android:colorBackground">#10191B</item>
+        <item name="android:windowBackground">#10191B</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#10191B</item>
+        <item name="android:navigationBarColor">#10191B</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>
