@@ -39,7 +39,7 @@ try{
     $files=Get-ChildItem -LiteralPath $projectDirectory -Recurse -File -Force | Sort-Object FullName
     foreach($file in $files){
         $relative=$file.FullName.Substring($projectDirectory.Length+1).Replace('\','/')
-        if($relative -match '(^|/)(\.gradle|build|work|deps|verification|__pycache__|\.git|sources|books|tooling|signing)/|(^|/)(local\.properties|\.env(\..*)?)$|\.(pdf|apk|exe|zip|keystore|jks|p12|pfx|pem|key)$'){continue}
+        if($relative -match '(^|/)(\.gradle|build|work|deps|verification|__pycache__|\.git|sources|books|tooling|signing)/|(^|/)(local\.properties|\.git|\.env(\..*)?)$|\.(pdf|apk|exe|zip|keystore|jks|p12|pfx|pem|key)$'){continue}
         if(($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw '源码包不包含链接文件。'}
         [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$file.FullName,$relative,[IO.Compression.CompressionLevel]::Optimal) | Out-Null
     }

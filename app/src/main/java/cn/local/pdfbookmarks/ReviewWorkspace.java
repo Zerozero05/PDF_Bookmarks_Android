@@ -4,13 +4,20 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.os.Build;
 import android.text.Editable;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -19,9 +26,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.view.WindowInsets;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.BaseAdapter;
+import android.widget.AbsListView;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -32,6 +41,7 @@ import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -71,6 +81,29 @@ public final class ReviewWorkspace extends LinearLayout {
     private Button[] fullZoomButtons;
     private AdjustmentDialog adjustmentDialog;
     private PopupMenu openMenu;
+    private AlertDialog detailDialog;
+    private Runnable onStateChanged;
+    private boolean restoringState;
+
+    /** UI-only draft state. File identity and the user's verification remain the caller's responsibility. */
+    public static final class State {
+        public final String query, previewTitle;
+        public final int[] collapsedSourceIndices, targetPages;
+        public final int selectedSourceIndex, previewPage, firstListPosition, listTopOffset;
+
+        public State(String query, int[] collapsedSourceIndices, int selectedSourceIndex,
+                     int previewPage, String previewTitle, int firstListPosition, int listTopOffset,
+                     int[] targetPages) {
+            this.query = query == null ? "" : query;
+            this.collapsedSourceIndices = collapsedSourceIndices == null ? new int[0] : collapsedSourceIndices.clone();
+            this.selectedSourceIndex = selectedSourceIndex;
+            this.previewPage = previewPage;
+            this.previewTitle = previewTitle == null ? "" : previewTitle;
+            this.firstListPosition = firstListPosition;
+            this.listTopOffset = listTopOffset;
+            this.targetPages = targetPages == null ? new int[0] : targetPages.clone();
+        }
+    }
 
     public ReviewWorkspace(Activity activity, UiAppearance appearance, Runnable onRowsApplied,
                            BiConsumer<Integer, String> requestPage) {
@@ -91,14 +124,20 @@ public final class ReviewWorkspace extends LinearLayout {
         searchBar.addView(search, new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         clearSearch = button(activity, R.string.review_clear, () -> search.setText(""));
         more = button(activity, R.string.review_more, this::showMenu);
-        searchBar.addView(clearSearch);
-        searchBar.addView(more);
+        clearSearch.setText(R.string.review_v12_clear_symbol);
+        clearSearch.setContentDescription(getString(R.string.review_clear));
+        more.setText(R.string.review_v12_menu_symbol);
+        more.setContentDescription(getString(R.string.review_v12_actions));
+        clearSearch.setMinWidth(0);
+        more.setMinWidth(0);
+        searchBar.addView(clearSearch, new LayoutParams(dp(48), -2));
+        searchBar.addView(more, new LayoutParams(dp(48), -2));
         directoryPane.addView(searchBar);
         counts = label(activity, R.string.review_empty, 13);
         pad(counts, 8, 4, 8, 6);
         directoryPane.addView(counts);
         heading = row(activity);
-        pad(heading, 8, 6, 8, 6);
+        pad(heading, 12, 10, 12, 10);
         titleHeading = label(activity, R.string.review_title_column, 14);
         titleHeading.setTypeface(null, Typeface.BOLD);
         heading.addView(titleHeading, new LayoutParams(0, -2, 1));
@@ -128,6 +167,8 @@ public final class ReviewWorkspace extends LinearLayout {
                     fold.setMinWidth(0);
                     item.addView(fold, new LayoutParams(dp(48), -1));
                     TextView title = label(activity, R.string.review_title_column, 15);
+                    title.setMaxLines(2);
+                    title.setEllipsize(TextUtils.TruncateAt.END);
                     item.addView(title, new LayoutParams(0, -2, 1));
                     TextView target = label(activity, R.string.review_page_column, 15);
                     target.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
@@ -136,13 +177,18 @@ public final class ReviewWorkspace extends LinearLayout {
                 DirectoryViewModel.VisibleRow visible = displayed.get(position);
                 Button fold = (Button) item.getChildAt(0);
                 appearance.styleButton(fold, false);
+                fold.setBackground(new RippleDrawable(ColorStateList.valueOf(
+                        (appearance.accent & 0x00ffffff) | 0x29000000), null, new ColorDrawable(-1)));
                 fold.setText(visible.expanded ? R.string.review_collapse : R.string.review_expand);
                 fold.setContentDescription(getString(visible.expanded
                         ? R.string.review_collapse_title : R.string.review_expand_title, visible.row.title));
                 fold.setVisibility(visible.hasChildren && !directory.isSearching() ? VISIBLE : INVISIBLE);
                 fold.setEnabled(!busy);
                 fold.setOnClickListener(v -> {
-                    if (!busy && directory != null && directory.toggle(visible.sourceIndex)) refreshRows(false);
+                    if (!busy && directory != null && directory.toggle(visible.sourceIndex)) {
+                        refreshRows(false);
+                        notifyStateChanged();
+                    }
                 });
                 TextView title = (TextView) item.getChildAt(1);
                 appearance.styleText(title, 15);
@@ -155,17 +201,26 @@ public final class ReviewWorkspace extends LinearLayout {
                 target.setText(getString(R.string.review_number, visible.row.pdfPage));
                 pad(target, 4, 8, 8, 8);
                 target.setContentDescription(getString(R.string.review_actual_page, visible.row.pdfPage));
-                item.setMinimumHeight(dp(48));
+                item.setMinimumHeight(dp(56));
                 item.setBackgroundColor(visible.selected ? appearance.selectedRow : appearance.surface);
                 item.setContentDescription(getString(R.string.review_row_description, visible.row.title,
                         visible.row.level, visible.row.pdfPage));
                 item.setOnClickListener(v -> selectRow(visible.sourceIndex));
+                item.setOnLongClickListener(v -> showRowDetails(visible.sourceIndex));
                 return item;
             }
         };
         list.setAdapter(adapter);
         list.setOnItemClickListener((parent, view, position, id) -> {
             if (position >= 0 && position < displayed.size()) selectRow(displayed.get(position).sourceIndex);
+        });
+        list.setOnItemLongClickListener((parent, view, position, id) -> position >= 0
+                && position < displayed.size() && showRowDetails(displayed.get(position).sourceIndex));
+        list.setOnScrollListener(new AbsListView.OnScrollListener() {
+            @Override public void onScrollStateChanged(AbsListView view, int scrollState) {
+                if (scrollState == SCROLL_STATE_IDLE) notifyStateChanged();
+            }
+            @Override public void onScroll(AbsListView view, int first, int count, int total) { }
         });
         empty = label(activity, R.string.review_empty, 14);
         empty.setGravity(Gravity.CENTER);
@@ -177,6 +232,8 @@ public final class ReviewWorkspace extends LinearLayout {
 
         pagePane = column(activity);
         pageLabel = label(activity, R.string.review_preview_hint, 14);
+        pageLabel.setMaxLines(3);
+        pageLabel.setEllipsize(TextUtils.TruncateAt.END);
         pad(pageLabel, 8, 6, 8, 6);
         pagePane.addView(pageLabel);
         image = new ZoomImageView(activity);
@@ -204,6 +261,7 @@ public final class ReviewWorkspace extends LinearLayout {
             if (internalQuery || directory == null) return;
             directory.setQuery(search.getText().toString());
             refreshRows(false);
+            notifyStateChanged();
         }));
         search.setOnEditorActionListener((view, action, event) -> {
             if (action == EditorInfo.IME_ACTION_SEARCH
@@ -256,6 +314,105 @@ public final class ReviewWorkspace extends LinearLayout {
 
     public List<TocParser.Row> rows() { return adjustments == null ? Collections.emptyList() : adjustments.rows(); }
     public boolean isAdjusted() { return adjustments != null && adjustments.isAdjusted(); }
+
+    public void setOnStateChangedListener(Runnable listener) { onStateChanged = listener; }
+
+    public State snapshotState() {
+        int[] collapsed = directory == null ? new int[0] : directory.collapsedSourceIndices().stream()
+                .mapToInt(Integer::intValue).sorted().toArray();
+        List<TocParser.Row> applied = rows();
+        int[] targets = new int[applied.size()];
+        for (int i = 0; i < targets.length; i++) targets[i] = applied.get(i).pdfPage;
+        View first = displayed.isEmpty() ? null : list.getChildAt(0);
+        int firstPosition = Math.max(0, Math.min(list.getFirstVisiblePosition(), displayed.size() - 1));
+        return new State(directory == null ? "" : directory.query(), collapsed,
+                directory == null ? -1 : directory.selectedSourceIndex(), currentPage, currentTitle,
+                firstPosition, first == null ? 0 : first.getTop(), targets);
+    }
+
+    /** Call only after reading and validating the draft's original PDF and JSON identities. */
+    public void restoreState(State state) {
+        if (state == null || directory == null || adjustments == null) return;
+        List<TocParser.Row> original = adjustments.originalRows();
+        if (state.targetPages.length != original.size() || state.selectedSourceIndex < -1
+                || state.selectedSourceIndex >= original.size() || state.previewPage < 0
+                || state.previewPage > pageCount) {
+            throw new IllegalArgumentException(getString(R.string.review_v12_draft_mismatch));
+        }
+        for (int index : state.collapsedSourceIndices) {
+            if (index < 0 || index >= original.size() || !directory.hasChildren(index)) {
+                throw new IllegalArgumentException(getString(R.string.review_v12_draft_mismatch));
+            }
+        }
+        List<TocParser.Row> restored = new ArrayList<>();
+        boolean targetsChanged = false;
+        for (int i = 0; i < original.size(); i++) {
+            TocParser.Row row = original.get(i);
+            restored.add(new TocParser.Row(row.level, row.title, row.printedPage, state.targetPages[i]));
+            targetsChanged |= state.targetPages[i] != adjustments.rows().get(i).pdfPage;
+        }
+        restoringState = true;
+        try {
+            // apply validates every page against the original baseline before committing any changes.
+            adjustments.apply(restored);
+            directory = new DirectoryViewModel(adjustments.rows());
+            if (state.selectedSourceIndex >= 0) directory.select(state.selectedSourceIndex);
+            for (int index : state.collapsedSourceIndices) if (directory.isExpanded(index)) directory.toggle(index);
+            directory.setQuery(state.query);
+            setSearchText(directory.query());
+            refreshRows(false);
+            final int generation = ++refreshGeneration;
+            list.post(() -> {
+                if (generation != refreshGeneration) return;
+                restoringState = true;
+                try {
+                    int first = Math.max(0, Math.min(state.firstListPosition, displayed.size() - 1));
+                    list.setSelectionFromTop(first, state.listTopOffset);
+                } finally { restoringState = false; }
+            });
+            currentPage = state.previewPage;
+            currentTitle = state.previewTitle;
+            if (targetsChanged) onRowsApplied.run();
+            if (state.previewPage > 0) requestPage.accept(state.previewPage, state.previewTitle);
+            else { clearBitmap(); updatePageLabels(); }
+        } finally { restoringState = false; }
+    }
+
+    /** Consumes the closest transient review UI before the Activity handles leaving the workflow. */
+    public boolean handleBack() {
+        Dialog active = showing(detailDialog) ? detailDialog
+                : adjustmentDialog != null && showing(adjustmentDialog.dialog) ? adjustmentDialog.dialog
+                : showing(fullDialog) ? fullDialog : null;
+        View focused = active == null ? activity.getCurrentFocus() : active.getCurrentFocus();
+        View root = active != null && active.getWindow() != null
+                ? active.getWindow().getDecorView() : getRootView();
+        if (keyboardVisible(root)) {
+            hideKeyboard(focused == null ? root : focused);
+            if (focused instanceof EditText) focused.clearFocus();
+            return true;
+        }
+        if (showing(detailDialog)) { detailDialog.dismiss(); return true; }
+        if (openMenu != null) { PopupMenu menu = openMenu; openMenu = null; menu.dismiss(); return true; }
+        if (adjustmentDialog != null && showing(adjustmentDialog.dialog)) { adjustmentDialog.dialog.dismiss(); return true; }
+        if (showing(fullDialog)) { fullDialog.dismiss(); return true; }
+        return false;
+    }
+
+    private static boolean showing(Dialog dialog) { return dialog != null && dialog.isShowing(); }
+
+    private boolean keyboardVisible(View root) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsets insets = root.getRootWindowInsets();
+            if (insets != null) return insets.isVisible(WindowInsets.Type.ime());
+        }
+        Rect visible = new Rect();
+        root.getWindowVisibleDisplayFrame(visible);
+        return root.getHeight() - visible.height() > dp(160);
+    }
+
+    private void notifyStateChanged() {
+        if (!restoringState && directory != null && onStateChanged != null) onStateChanged.run();
+    }
 
     public void setBusy(boolean value) {
         busy = value;
@@ -330,8 +487,9 @@ public final class ReviewWorkspace extends LinearLayout {
     }
 
     public boolean hasModalUi() {
-        return openMenu != null || (fullDialog != null && fullDialog.isShowing())
-                || (adjustmentDialog != null && adjustmentDialog.dialog.isShowing());
+        // Dialog visibility changes before its queued OnDismissListener clears our reference.
+        return showing(detailDialog) || openMenu != null || showing(fullDialog)
+                || (adjustmentDialog != null && showing(adjustmentDialog.dialog));
     }
 
     public void showLoading(int page, String title) {
@@ -342,6 +500,7 @@ public final class ReviewWorkspace extends LinearLayout {
         if (fullLabel != null) fullLabel.setText(getString(R.string.review_loading, page));
         if (adjustmentDialog != null) adjustmentDialog.showLoading(page);
         updateControls();
+        notifyStateChanged();
     }
 
     /** The caller owns bitmap lifetime; references are cleared before it may recycle. */
@@ -354,6 +513,7 @@ public final class ReviewWorkspace extends LinearLayout {
         if (adjustmentDialog != null) adjustmentDialog.showBitmap(value, page);
         updatePageLabels();
         updateControls();
+        notifyStateChanged();
     }
 
     public void clearBitmap() {
@@ -401,6 +561,7 @@ public final class ReviewWorkspace extends LinearLayout {
         TocParser.Row row = adjustments.rows().get(sourceIndex);
         hideKeyboard(search);
         requestPage.accept(row.pdfPage, row.title);
+        notifyStateChanged();
     }
 
     private void refreshRows(boolean reveal) {
@@ -420,9 +581,15 @@ public final class ReviewWorkspace extends LinearLayout {
             if (generation == refreshGeneration && !displayed.isEmpty()) list.setSelectionFromTop(restore, restoreTop);
         });
         if (directory == null) counts.setText(R.string.review_empty);
-        else if (directory.isSearching()) counts.setText(getString(R.string.review_search_counts,
-                directory.matchCount(), displayed.size(), directory.sourceCount()));
-        else counts.setText(getString(R.string.review_counts, displayed.size(), directory.sourceCount()));
+        else {
+            String summary = directory.isSearching() ? getString(R.string.review_v12_search_counts,
+                    directory.matchCount(), displayed.size(), directory.sourceCount())
+                    : getString(R.string.review_v12_counts, directory.sourceCount(), displayed.size());
+            counts.setText(getString(R.string.workflow_review_summary, summary, getString(R.string.review_v12_list_hint)));
+            counts.setContentDescription(directory.isSearching()
+                    ? getString(R.string.review_search_counts, directory.matchCount(), displayed.size(), directory.sourceCount())
+                    : getString(R.string.review_counts, displayed.size(), directory.sourceCount()));
+        }
         empty.setText(directory == null ? R.string.review_empty : R.string.review_no_matches);
         updateControls();
     }
@@ -455,6 +622,7 @@ public final class ReviewWorkspace extends LinearLayout {
                 case 5: restoreMapping(); break;
                 default: return false;
             }
+            notifyStateChanged();
             return true;
         });
         menu.setOnDismissListener(ignored -> { if (openMenu == menu) openMenu = null; });
@@ -467,6 +635,7 @@ public final class ReviewWorkspace extends LinearLayout {
         directory.updateRows(adjustments.rows());
         refreshRows(false);
         onRowsApplied.run();
+        notifyStateChanged();
         if (directory.selectedSourceIndex() >= 0) {
             TocParser.Row selected = adjustments.rows().get(directory.selectedSourceIndex());
             requestPage.accept(selected.pdfPage, selected.title);
@@ -529,6 +698,7 @@ public final class ReviewWorkspace extends LinearLayout {
         fullShell.addView(fullPageControls.container);
         dialog.setContentView(fullShell);
         dialog.setOnKeyListener((ignored, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) return handleBack();
             if (busy || bitmap == null || dialog.getCurrentFocus() instanceof EditText
                     || event.getAction() != KeyEvent.ACTION_DOWN || event.isCtrlPressed() || event.isAltPressed()) return false;
             if (keyCode == KeyEvent.KEYCODE_PLUS || keyCode == KeyEvent.KEYCODE_EQUALS
@@ -563,9 +733,73 @@ public final class ReviewWorkspace extends LinearLayout {
     }
 
     private void dismissDocumentDialogs() {
+        if (detailDialog != null) detailDialog.dismiss();
         if (openMenu != null) openMenu.dismiss();
         if (fullDialog != null) fullDialog.dismiss();
         if (adjustmentDialog != null) adjustmentDialog.dialog.dismiss();
+    }
+
+    private boolean showRowDetails(int sourceIndex) {
+        if (busy || adjustments == null || sourceIndex < 0 || sourceIndex >= rows().size()) return false;
+        hideKeyboard(search);
+        if (detailDialog != null) detailDialog.dismiss();
+        TocParser.Row current = rows().get(sourceIndex), original = adjustments.originalRows().get(sourceIndex);
+        Context context = appearance.dialogContext(activity);
+        LinearLayout content = column(context);
+        pad(content, 24, 8, 24, 12);
+        TextView meta = label(context, R.string.review_v12_row_meta, 13);
+        meta.setText(getString(R.string.review_v12_row_meta, sourceIndex + 1, current.level));
+        meta.setTextColor(appearance.secondaryText);
+        content.addView(meta);
+        TextView fullTitle = label(context, R.string.review_title_column, 19);
+        fullTitle.setText(current.title);
+        fullTitle.setTypeface(null, Typeface.BOLD);
+        fullTitle.setTextIsSelectable(true);
+        pad(fullTitle, 0, 8, 0, 20);
+        content.addView(fullTitle);
+        LinearLayout targets = row(context);
+        for (boolean before : new boolean[]{true, false}) {
+            LinearLayout cell = column(context);
+            TextView label = label(context, before ? R.string.review_v12_original_page
+                    : R.string.review_v12_current_page, 13);
+            label.setTextColor(appearance.secondaryText);
+            cell.addView(label);
+            TextView number = label(context, R.string.review_v12_page_value, 17);
+            number.setText(getString(R.string.review_v12_page_value, before ? original.pdfPage : current.pdfPage));
+            pad(number, 0, 8, 0, 8);
+            cell.addView(number);
+            targets.addView(cell, new LayoutParams(0, -2, 1));
+        }
+        content.addView(targets);
+        TextView mapping = label(context, R.string.review_v12_mapping_unchanged, 13);
+        mapping.setText(original.pdfPage == current.pdfPage ? getString(R.string.review_v12_mapping_unchanged)
+                : getString(R.string.review_v12_mapping, original.pdfPage, current.pdfPage));
+        mapping.setTextColor(appearance.secondaryText);
+        content.addView(mapping);
+        ScrollView scroll = new ScrollView(context);
+        scroll.addView(content);
+        AlertDialog dialog = new AlertDialog.Builder(context).setTitle(R.string.review_v12_row_details)
+                .setView(scroll).setNegativeButton(R.string.review_close, null)
+                .setNeutralButton(R.string.review_v12_copy_title, null)
+                .setPositiveButton(R.string.review_v12_copy_page, null).create();
+        detailDialog = dialog;
+        dialog.setOnDismissListener(ignored -> { if (detailDialog == dialog) detailDialog = null; });
+        dialog.setOnKeyListener((ignored, keyCode, event) -> keyCode == KeyEvent.KEYCODE_BACK
+                && event.getAction() == KeyEvent.ACTION_UP && handleBack());
+        dialog.show();
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(view ->
+                copyDetail(current.title, R.string.review_v12_copied_title));
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view ->
+                copyDetail(getString(R.string.review_number, current.pdfPage), R.string.review_v12_copied_page));
+        appearance.styleDialog(dialog);
+        return true;
+    }
+
+    private void copyDetail(String value, int message) {
+        ClipboardManager clipboard = (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) return;
+        clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.review_v12_row_details), value));
+        Toast.makeText(activity, message, Toast.LENGTH_SHORT).show();
     }
 
     private final class PageControls {
@@ -691,6 +925,8 @@ public final class ReviewWorkspace extends LinearLayout {
                     .setNegativeButton(R.string.review_cancel, null)
                     .setNeutralButton(R.string.review_restore_mapping, null)
                     .setPositiveButton(R.string.review_apply_mapping, null).create();
+            dialog.setOnKeyListener((ignored, keyCode, event) -> keyCode == KeyEvent.KEYCODE_BACK
+                    && event.getAction() == KeyEvent.ACTION_UP && handleBack());
             dialog.setOnDismissListener(ignored -> {
                 trialImage.setImageDrawable(null);
                 if (adjustmentDialog == this) adjustmentDialog = null;
@@ -716,6 +952,7 @@ public final class ReviewWorkspace extends LinearLayout {
                     directory.updateRows(adjustments.rows());
                     refreshRows(false);
                     onRowsApplied.run();
+                    notifyStateChanged();
                     dialog.dismiss();
                 } catch (IllegalArgumentException failure) { showFailure(failure.getMessage()); }
             });

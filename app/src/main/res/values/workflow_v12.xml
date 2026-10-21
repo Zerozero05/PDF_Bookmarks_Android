@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workflow_read_again">重新读取核对</string>
+    <string name="workflow_review_summary">%1$s\n%2$s</string>
+    <string name="workflow_draft_mismatch">草稿与当前目录不一致，未恢复：%1$s</string>
+    <string name="workflow_file_pair">PDF · %1$s\nJSON · %2$s</string>
+    <string name="workflow_pdf_changes">PDF目录：%1$s%2$s</string>
+    <string name="workflow_check_hint">\n导入检查有提示，可查看详情</string>
+    <string name="workflow_output_count">%1$s · %2$d 条目录</string>
+    <string name="workflow_output_summary">%1$s\n%2$s\n完整路径可长按文件名查看；选项按需展开。</string>
+</resources>

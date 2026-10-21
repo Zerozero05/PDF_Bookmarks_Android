@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="review_v12_clear_symbol">×</string>
+    <string name="review_v12_menu_symbol">⋯</string>
+    <string name="review_v12_actions">目录操作</string>
+    <string name="review_v12_counts">共 %1$d 条 · 当前显示 %2$d 条</string>
+    <string name="review_v12_search_counts">找到 %1$d 条 · 显示 %2$d / %3$d 条</string>
+    <string name="review_v12_list_hint">点按预览 · 长按详情；生成仍包含全部目录</string>
+    <string name="review_v12_row_details">目录详情</string>
+    <string name="review_v12_row_meta">第 %1$d 条 · %2$d 级目录</string>
+    <string name="review_v12_original_page">导入目标页</string>
+    <string name="review_v12_current_page">当前目标页</string>
+    <string name="review_v12_page_value">PDF 第 %1$d 页</string>
+    <string name="review_v12_mapping">PDF 第 %1$d 页 → 第 %2$d 页</string>
+    <string name="review_v12_mapping_unchanged">与导入时一致</string>
+    <string name="review_v12_copy_title">复制标题</string>
+    <string name="review_v12_copy_page">复制页码</string>
+    <string name="review_v12_copied_title">已复制完整标题</string>
+    <string name="review_v12_copied_page">已复制当前目标页</string>
+    <string name="review_v12_draft_mismatch">草稿与当前目录或PDF页数不一致，请重新核对。</string>
+</resources>
