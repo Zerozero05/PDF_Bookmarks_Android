@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="appearance_base_text_size" type="id" />
+    <item name="appearance_dialog_native_text" type="id" />
+    <string-array name="appearance_theme_labels">
+        <item>跟随系统</item>
+        <item>浅色</item>
+        <item>深色</item>
+    </string-array>
+    <string-array name="appearance_text_size_labels">
+        <item>标准</item>
+        <item>大</item>
+        <item>更大</item>
+    </string-array>
+    <string-array name="appearance_density_labels">
+        <item>舒适</item>
+        <item>紧凑</item>
+    </string-array>
+</resources>

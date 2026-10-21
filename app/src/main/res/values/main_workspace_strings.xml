@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="launcher_background">#0D7D74</color>
+    <item name="ui_primary_action" type="id" />
+    <item name="ui_surface_kind" type="id" />
+    <item name="ui_padding_dp" type="id" />
+    <string name="ui_appearance">外观</string>
+    <string name="ui_result_title">本次处理结果</string>
+    <string name="ui_result_details">查看详情与文件位置</string>
+    <string name="ui_stage_ready">第1步 · 选择PDF与目录JSON</string>
+    <string name="ui_stage_review">第2步 · 核对目录与实际跳转页</string>
+    <string name="ui_stage_recovery">请先处理未完成任务的恢复记录</string>
+    <string name="ui_stage_saved">第3步 · 已保存，可打开核对结果</string>
+    <string name="ui_stage_working">正在处理，请保持应用在前台</string>
+    <string name="ui_stage_read">正在读取PDF</string>
+    <string name="ui_stage_inspect">正在核验PDF页数与已有书签</string>
+    <string name="ui_stage_toc">正在读取与校验完整目录</string>
+    <string name="ui_stage_generate">正在生成并重读核验新PDF</string>
+    <string name="ui_stage_save">正在保存并核验新PDF</string>
+    <string name="ui_stage_catalog">正在核验并同步享做目录</string>
+    <string name="ui_stage_json">正在核验所选JSON并删除</string>
+    <string name="ui_stage_cleanup">正在核验并清理列明的旧文件</string>
+    <string name="ui_primary_read">读取文件并预览目录</string>
+    <string name="ui_primary_busy">正在处理…</string>
+    <string name="ui_primary_recovery">请先完成恢复</string>
+    <string name="ui_primary_open">打开已保存的PDF</string>
+    <string name="ui_primary_review">前往核对目录</string>
+    <string name="ui_primary_replace">生成并替换原PDF</string>
+    <string name="ui_primary_copy">生成并另存PDF</string>
+    <string name="ui_primary_save">保存已生成的PDF</string>
+    <string name="ui_theme">颜色主题</string>
+    <string name="ui_text_size">文字大小</string>
+    <string name="ui_density">界面间距</string>
+    <string name="ui_cancel">取消</string>
+    <string name="ui_apply">应用</string>
+    <string name="ui_close">关闭</string>
+    <string name="ui_copy_details">复制详情</string>
+    <string name="ui_review_first">请核对目录标题、层级和实际跳转页，再勾选确认。</string>
+    <string name="ui_review_summary">PDF共%1$d页 · 完整目录%2$d条 · 已有书签%3$d条</string>
+    <string name="ui_adjusted"> · 已应用页码调整</string>
+    <string name="ui_mapping_applied">页码映射已更新，请重新抽查实际页面并勾选确认。原JSON未改动。</string>
+    <string name="ui_generating">生成完整目录；搜索和折叠只影响显示。</string>
+    <string name="ui_pdf_kept">当前PDF保留。</string>
+    <string name="ui_catalog_not_requested">本次未选择同步享做目录。</string>
+    <string name="ui_json_kept">所选JSON保留。</string>
+    <string name="ui_backups_kept">关联PDF备份保留，可核对后统一清理。</string>
+    <string name="ui_not_run">前一步未完成，本步骤未执行。</string>
+    <string name="ui_save_cancelled">已取消另存；原文件与已生成PDF保留，可再次保存。</string>
+    <string name="ui_result_pdf">PDF生成</string>
+    <string name="ui_result_save">文件保存</string>
+    <string name="ui_result_catalog">享做目录</string>
+    <string name="ui_result_json">所选JSON</string>
+    <string name="ui_result_cleanup">旧文件与备份</string>
+    <string name="ui_waiting">待处理</string>
+    <string name="ui_running">处理中</string>
+    <string name="ui_success">成功</string>
+    <string name="ui_retained">已保留</string>
+    <string name="ui_skipped">未执行</string>
+    <string name="ui_failed">未完成</string>
+    <string name="ui_not_requested">未选择</string>
+    <string name="ui_result_heading">本次结果 · %1$s</string>
+    <string name="ui_result_line">%1$s：%2$s</string>
+    <string name="ui_result_path">实际保存位置</string>
+</resources>

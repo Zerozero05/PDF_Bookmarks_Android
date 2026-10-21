@@ -6,15 +6,20 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.provider.Settings;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -33,6 +38,9 @@ final class AppUpdates {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final UpdateClient client=new UpdateClient();
     private final String version;
+    private UiAppearance appearance;
+    private CheckBox automatic;
+    private final ArrayList<Button> buttons=new ArrayList<>();
     private Button check,action,cancel;
     private TextView notice;
     private UpdateClient.Cancel job;
@@ -44,19 +52,55 @@ final class AppUpdates {
 
     AppUpdates(Activity activity,BooleanSupplier installAllowed,Consumer<Button> style){
         this.activity=activity;this.installAllowed=installAllowed;this.style=style;
+        appearance=UiAppearance.load(activity);
         prefs=activity.getSharedPreferences(PREFS,Context.MODE_PRIVATE);version=activity.getString(R.string.app_version);
     }
     void attach(LinearLayout panel){
-        CheckBox automatic=new CheckBox(activity);automatic.setText("启动时自动检查更新（每天最多一次）");automatic.setChecked(prefs.getBoolean("automatic",true));panel.addView(automatic);
+        automatic=new CheckBox(activity);automatic.setText("启动时自动检查更新（每天最多一次）");automatic.setChecked(prefs.getBoolean("automatic",true));panel.addView(automatic);
         automatic.setOnCheckedChangeListener((button,value)->{prefs.edit().putBoolean("automatic",value).apply();if(value)automaticCheck();});
-        notice=new TextView(activity);notice.setTextSize(14);notice.setTextColor(0xff1d3439);notice.setText(activity.getString(R.string.update_current,version));panel.addView(notice);
+        notice=new TextView(activity);notice.setText(activity.getString(R.string.update_current,version));panel.addView(notice);
         check=button(panel,"检查更新",()->check(true));action=button(panel,"下载更新",this::act);cancel=button(panel,"取消更新操作",this::cancel);
         button(panel,"打开发行页",()->openRelease(offer==null?"https://github.com/"+UpdateRelease.REPOSITORY+"/releases/latest":offer.release.releaseUrl));
+        applyAppearance(appearance);
         refresh();restoreReady();
     }
     private Button button(LinearLayout parent,String title,Runnable run){
         Button button=new Button(activity);button.setText(title);button.setTextSize(15);button.setAllCaps(false);button.setMinHeight(dp(48));button.setPadding(dp(12),dp(10),dp(12),dp(10));style.accept(button);
-        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.topMargin=dp(8);parent.addView(button,params);button.setOnClickListener(view->run.run());return button;
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.topMargin=dp(8);parent.addView(button,params);button.setOnClickListener(view->run.run());buttons.add(button);return button;
+    }
+    /** Repaint only; do not check versions, alter preferences or restart update work. */
+    void applyAppearance(UiAppearance value){
+        appearance=value;
+        if(automatic!=null)appearance.styleChoice(automatic);
+        if(notice!=null){appearance.styleText(notice,14);notice.setTextColor(appearance.secondaryText);}
+        for(Button button:buttons){
+            appearance.styleButton(button,false);
+            if(button.getLayoutParams() instanceof LinearLayout.LayoutParams){
+                LinearLayout.LayoutParams params=(LinearLayout.LayoutParams)button.getLayoutParams();
+                params.topMargin=dp(appearance.spacingDp(8));button.setLayoutParams(params);
+            }
+        }
+        styleOpenDialog();
+    }
+    private void styleOpenDialog(){
+        if(dialog==null||!dialog.isShowing()||dialog.getWindow()==null)return;
+        appearance.styleDialog(dialog);
+        dialog.getWindow().setBackgroundDrawable(new ColorDrawable(appearance.surface));
+        styleDialogContent(dialog.getWindow().getDecorView());
+    }
+    private void styleDialogContent(View view){
+        if(view instanceof TextView){
+            TextView text=(TextView)view;Object base=text.getTag(R.id.appearance_base_text_size);
+            float size=base instanceof Number?((Number)base).floatValue():text.getTextSize()/activity.getResources().getDisplayMetrics().scaledDensity;
+            appearance.styleText(text,size);
+            if(view instanceof Button){
+                text.setTextColor(appearance.accent);text.setBackgroundTintList(ColorStateList.valueOf(appearance.surface));
+            }else text.setBackgroundColor(Color.TRANSPARENT);
+        }
+        if(view instanceof ViewGroup){
+            ViewGroup group=(ViewGroup)view;group.setBackgroundColor(appearance.surface);
+            for(int index=0;index<group.getChildCount();index++)styleDialogContent(group.getChildAt(index));
+        }
     }
     private int dp(int value){return Math.round(value*activity.getResources().getDisplayMetrics().density);}
     void onResume(){resumed=true;automaticCheck();refresh();}
@@ -96,11 +140,11 @@ final class AppUpdates {
     private void showOffer(){
         if(offer==null)return;
         String notes=offer.release.notes;if(notes.length()>8000)notes=notes.substring(0,8000)+"\n完整说明见发行页。";
-        dialog=new AlertDialog.Builder(activity).setTitle(activity.getString(R.string.update_offer_title,offer.release.version))
+        dialog=new AlertDialog.Builder(appearance.dialogContext(activity)).setTitle(activity.getString(R.string.update_offer_title,offer.release.version))
                 .setMessage(activity.getString(R.string.update_offer_message,version,size(offer.release.size),notes))
                 .setNegativeButton("稍后",null).setNeutralButton("发行说明",(d,w)->openRelease(offer.release.releaseUrl))
                 .setPositiveButton(ready==null?"下载更新":"安装更新",(d,w)->{if(ready==null)download();else install();}).create();
-        dialog.setOnDismissListener(d->dialog=null);dialog.show();
+        dialog.setOnDismissListener(d->dialog=null);dialog.show();styleOpenDialog();
     }
     private void act(){if(job!=null)return;if(ready==null)showOffer();else install();}
     private void download(){
@@ -134,12 +178,12 @@ final class AppUpdates {
     private void launchInstaller(File file){
         if(!installAllowed.getAsBoolean()){notice.setText("安装包已准备。请完成当前任务后再点击安装。");return;}
         if(!activity.getPackageManager().canRequestPackageInstalls()){
-            dialog=new AlertDialog.Builder(activity).setTitle("允许本工具安装更新")
+            dialog=new AlertDialog.Builder(appearance.dialogContext(activity)).setTitle("允许本工具安装更新")
                     .setMessage("系统需要你允许此来源安装应用。授权后返回，再点击“安装更新”；取消也能继续使用当前版本。")
                     .setNegativeButton("返回",null).setPositiveButton("前往授权",(d,w)->{
                         try{activity.startActivityForResult(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+activity.getPackageName())),INSTALL_PERMISSION);}
                         catch(ActivityNotFoundException|SecurityException e){notice.setText("此系统未提供安装来源设置，请从发行页手动覆盖安装。");}
-                    }).create();dialog.setOnDismissListener(d->dialog=null);dialog.show();return;
+                    }).create();dialog.setOnDismissListener(d->dialog=null);dialog.show();styleOpenDialog();return;
         }
         try{
             Uri uri=UpdateApkProvider.uri(activity,file.getName());

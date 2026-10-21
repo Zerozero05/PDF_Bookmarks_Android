@@ -14,9 +14,31 @@
 
 ## 代码与兼容性
 
-MainActivity负责选文件、两栏预览和用户确认；TocParser负责两种JSON和映射；PdfBookmarks负责增量写入/结果校验；PathDocuments/StagedDocuments负责真实SAF身份与授权；StagedReplacement负责可恢复改名；BackupCleanup只负责用户确认后的旧备份门禁。精确修改对应模块，不重写未改变的引擎。
+MainActivity负责选文件、任务编排和用户确认；ReviewWorkspace负责目录搜索／折叠、抽查与页码调整入口；DirectoryViewModel保持条目身份和显示过滤，PageAdjustments保持完整页码工作副本；ZoomImageView和ResizablePreviewLayout负责缩放及分栏；UiAppearance负责独立显示偏好；TaskOutcome只记录分项结果；TocParser负责两种JSON和映射；PdfBookmarks负责增量写入/结果校验；PathDocuments/StagedDocuments负责真实SAF身份与授权；StagedReplacement负责可恢复改名；BackupCleanup只负责用户确认后的旧备份门禁。精确修改对应模块，不重写未改变的引擎。
 
 保持cn.local.pdfbookmarks、既有SharedPreferences键、files/pdf-backups目录及两种输入格式兼容。新增字段缺失必须保守处理：旧版没有lastReplacement关联时不能猜删备份。升级不清除应用数据，不自动执行pending任务，不自动删除内部备份。v0.1.8仅在用户确认完整清单后允许统一清理本次关联内部备份；清理后不能恢复。pendingCleanup保存授权快照，未完成时阻止新写入；可先保存原快照到files/cleanup-records后结束清理并保留所有剩余旧件，不能丢弃记录来获得干净状态。未来如需迁移，先保存原值，失败保留原数据，并补真实兼容回归。
+
+## v1.1.1 启动与系统栏维护
+
+当前修复候选为 1.1.1／code14，公开正式版仍为 v1.0.0。MRO-W00／API31 实际旧版日志已确认 `PhoneWindow.getInsetsController` 直接访问尚未创建的 DecorView，会在 `MainActivity.onCreate` 中使应用退出；不能因为 SDK 版本门禁正确，就假定窗口已完成初始化。
+
+系统栏更新需安排在内容视图建立之后。先获取 DecorView，再在其视图队列中读取控制器；控制器尚不可用时不能解引用。外观或配置变化复用同一路径，保持 API26–29 的旧系统栏处理与任务状态。不得用广泛捕获全部启动异常、清应用数据或删旧配置来掩盖生命周期错误。修复未改 PDF、目录、备份及更新事务。
+
+启动验收须覆盖首次打开、保留数据覆盖升级、返回前台及外观变化。真实设备启动结果、宿主窗口生命周期回归和构建／单测结果分别记录，不能以编译通过或读取旧日志代替新版启动成功，见[D49–D51](DEVICE_ACCEPTANCE.md#v111-启动修复验收)和[VALIDATION](../VALIDATION.md)。
+
+本轮已获用户同意并在目标API31设备原签名覆盖安装1.1.1，原应用身份／首次安装时间保持，主界面及JSON文件选择页已显示，当前进程持续存活且未再记录致命异常。此观察不覆盖重复冷启动、旧授权／恢复资料访问、主题三模式或窗口重建；临时测试组件安装被设备拒绝，未运行Instrumentation，核实测试包不存在，未更改安全设置。后续按实际范围补验，不回填全部设备矩阵为通过。
+
+## v1.1.0 核对与界面维护
+
+以下能力自 1.1.0／code13 引入，并在 1.1.1 修复候选保留；1.1.0 的已确认启动问题见上一节。搜索、折叠和行选择使用原条目索引，生成／同步必须读取完整的 `PageAdjustments.rows()`，不能误用过滤后的可见列表。页码试算基于导入后的实际目标页，每次从同一基准计算；试算未明确应用、参数修改或校验失败时不改已应用结果。应用及恢复映射须使旧核对和生成结果失效，来源 JSON 不改写。
+
+外观设置使用独立的 `ui_appearance`，左右／上下分栏比例使用 `review_ui`；旧 Activity 任务键、`app_updates`、目录模式和 JSON 删除默认值保持。主题、字号、间距和窗口变化直接更新当前视图，不调用 Activity 重建来丢弃运行中任务；进程死亡恢复仍按原持久事务门禁处理，搜索／页码工作副本不宣称持久草稿。新增弹窗必须取当前主题 context，并同步文字、控件、错误、选中与禁用颜色，不能只改变页面背景。
+
+底部主操作的文字和动作须一致；已生成待保存结果走保存入口，不重复生成。任务阶段由真实处理点触发，无法量化时保持不定进度；结果卡片分别报告生成、保存、享做同步、JSON 和清理状态，不把 PDF 成功覆盖其他部分失败，保留实际保存位置与可复制原因。结果文案不改变事务检查、授权、恢复或删除的判定。
+
+方法参考 Android 官方[自适应布局](https://developer.android.com/develop/ui/views/layout/canonical-layouts)、[拖动与缩放手势](https://developer.android.com/develop/ui/views/touch-and-input/gestures/scale)及[按文件名分离 SharedPreferences](https://developer.android.com/training/data-storage/shared-preferences)。本项目用现有原生 Views 实现，仅借鉴布局／API 方法，未复制外部代码、未迁移到 Compose、未添加运行依赖。新图标为经用户同意的内置 imagegen 生成资源 `drawable-nodpi/ic_book_v11.png`，旧 `ic_book.xml` 保留；`mipmap-anydpi/ic_launcher.xml` 按 Android 官方[自适应图标](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive)方法组合前景／背景，由系统启动器遮罩显示，不改写生成 PNG。
+
+新增测试应覆盖搜索／折叠下完整目录写入、映射不累加和失败不应用、窗口及显示切换保留任务，以及部分成功结果。UI 手势、键盘／触控笔、软键盘、深浅弹窗、覆盖升级和文件提供者仍须按[D33–D48](DEVICE_ACCEPTANCE.md#v110-核对与界面验收)真机核对；构建、JVM 状态测试和静态颜色计算分别证明，不能替代触摸截图或设备结果。v1.1.0 本轮没有真机连接，相关项如实待测，实际电脑检查由[VALIDATION](../VALIDATION.md)记录。
 
 ## 构建、版本及发布
 
