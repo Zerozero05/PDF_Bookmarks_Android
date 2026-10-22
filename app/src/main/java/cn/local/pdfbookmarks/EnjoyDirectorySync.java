@@ -7,6 +7,9 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.provider.DocumentsContract;
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -19,6 +22,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /** 仅同步已核实的享做主目录；调用方须串行执行，并先请用户保存、完全停止享做。 */
@@ -54,11 +59,15 @@ public final class EnjoyDirectorySync {
         private final String pdfName;
         private final List<Snapshot> snapshots;
         private final byte[] original;
+        private final Map<String,Integer> physicalPages;
         private Prepared(StagedDocuments documents, String pdfName, List<Snapshot> snapshots,
-                         byte[] original, EnjoyCatalog.Plan plan) {
+                         byte[] original, EnjoyCatalog.Plan plan, Map<String,Integer> physicalPages) {
             this.documents = documents; this.pdfName = pdfName; this.snapshots = snapshots;
             this.original = original; this.plan = plan;
+            this.physicalPages = physicalPages;
         }
+        /** Read-only comparison of the exact snapshots already validated by prepare(). */
+        public String describePreview() { return CatalogDiff.compare(original, plan.json, physicalPages).describe(); }
     }
 
     private static final class Pending {
@@ -119,7 +128,16 @@ public final class EnjoyDirectorySync {
                 "/storage/emulated/0/" + id.substring(8), actualPages, rows, replaceExisting);
         verifySnapshots(documents, snapshots, false);
         checkedPdf(documents, name, expectedPdfHash);
-        return new Prepared(documents, name, snapshots, original, plan);
+        Map<String,Integer> physicalPages = new LinkedHashMap<>();
+        JsonObject indexes = JsonParser.parseString(new String(pageids, java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+        for (JsonElement element : indexes.getAsJsonArray("infos")) {
+            JsonObject page = element.getAsJsonObject();
+            String path = page.get("document").getAsString();
+            if (!path.isEmpty() && id.equals(SharedPath.documentId(path))) {
+                physicalPages.put(page.get("id").getAsString(), page.get("docIndex").getAsInt() + 1);
+            }
+        }
+        return new Prepared(documents, name, snapshots, original, plan, physicalPages);
     }
 
     /** PDF 已在原路径保存校验后调用；两次同步相同目录时不创建文件、不改计数。 */

@@ -27,7 +27,7 @@ $zip=[IO.Compression.ZipFile]::OpenRead($zipPath)
 try{
     foreach($entry in $zip.Entries){
         $name=$entry.FullName
-        if(!$names.Add($name) -or $name -match '(^/|\|:|(^|/)\.\.(/|$))|(^|/)(work|verification|deps|build|tooling|sources|books|signing|\.git|\.gradle)/|(^|/)(local\.properties|\.env(\..*)?)$|\.(pdf|apk|exe|zip|keystore|jks|p12|pfx|pem|key)$'){throw ('源码包有重复、私有或不安全条目：'+$name)}
+        if(!$names.Add($name) -or $name -match '(^/|\|:|(^|/)\.\.(/|$))|(^|/)(work|verification|deps|build|tooling|sources|books|signing|\.git|\.gradle)/|(^|/)(local\.properties|\.git|\.env(\..*)?)$|\.(pdf|apk|exe|zip|keystore|jks|p12|pfx|pem|key)$'){throw ('源码包有重复、私有或不安全条目：'+$name)}
         $current=Join-Path $sourceRoot $name
         if(!(Test-Path -LiteralPath $current -PathType Leaf)-or (EntryHash $entry) -cne (FileHash $current)){throw ('源码包与当前源文件不一致：'+$name)}
     }

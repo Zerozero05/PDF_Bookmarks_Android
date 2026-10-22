@@ -30,6 +30,9 @@ public final class StartupSmoke extends Instrumentation {
         Throwable failure = null;
         int appearanceChecks = 0;
         boolean recreated = false;
+        String workflowResult = "NOT_RUN";
+        String windowResult = "NOT_RUN";
+        String grantResult = "NOT_RUN";
         try {
             Intent launch = new Intent(Intent.ACTION_MAIN)
                     .setClass(getTargetContext(), MainActivity.class)
@@ -57,6 +60,9 @@ public final class StartupSmoke extends Instrumentation {
             checkSystemBars(current);
             appearanceChecks += 3;
             recreated = true;
+            windowResult = WindowSmoke.verify(this, current);
+            workflowResult = WorkflowSmoke.verify(this, current);
+            grantResult = GrantPickerSmoke.verify(this, current);
         } catch (Throwable error) {
             failure = error;
         } finally {
@@ -78,7 +84,10 @@ public final class StartupSmoke extends Instrumentation {
         result.putString("model", Build.MODEL);
         result.putInt("systemBarChecks", appearanceChecks);
         result.putBoolean("activityRecreated", recreated);
-        result.putString("scope", "Activity startup, idle, system/light/dark system bars, recreation; no document operation");
+        result.putString("workflowSmoke", workflowResult);
+        result.putString("windowSmoke", windowResult);
+        result.putString("grantPickerSmoke", grantResult);
+        result.putString("scope", "Activity startup, system bars, recreation, synthetic review/draft UI and read-only grant picker gestures; no document operation or grant revocation");
         if (failure == null) {
             result.putString("stream", "\nPASS: MainActivity startup and recreation; 6 system-bar checks; appearance preferences unchanged.\n");
         } else {

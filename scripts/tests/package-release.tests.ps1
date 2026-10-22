@@ -25,7 +25,7 @@ function ResetFixture{
 }
 ResetFixture
 # 全部是合成输入；证明源码包不会携带用户PDF、私钥、环境秘密或诊断资料。
-foreach($name in @('sample.pdf','sample.key','.env','verification/private/record.json')){[IO.File]::WriteAllText((Join-Path $fixture $name),'synthetic excluded data')}
+foreach($name in @('sample.pdf','sample.key','.env','.git','verification/private/record.json')){[IO.File]::WriteAllText((Join-Path $fixture $name),'synthetic excluded data')}
 $results=[Collections.Generic.List[object]]::new()
 function Snapshot([string]$path){
     if(!(Test-Path -LiteralPath $path)){return 'ABSENT'}
@@ -68,7 +68,7 @@ try{
     try{
         $names=@($zip.Entries.FullName)
         if($names -notcontains 'scripts/package-release.ps1' -or $names -notcontains 'SIGNING_CERTIFICATE.sha256'){throw '源码缺少维护入口'}
-        if(@($names | Where-Object {$_ -match 'verification/|\.pdf$|\.key$|(^|/)\.env$'}).Count -ne 0){throw '源码包含合成私有输入'}
+        if(@($names | Where-Object {$_ -match 'verification/|\.pdf$|\.key$|(^|/)\.(env|git)$'}).Count -ne 0){throw '源码包含合成私有输入'}
     }finally{$zip.Dispose()}
     foreach($line in Get-Content -LiteralPath (Join-Path $success 'SHA256SUMS.txt')){
         $parts=$line -split '  ',2

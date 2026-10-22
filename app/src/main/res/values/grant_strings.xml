@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="grant_select">选择</string>
+    <string name="grant_exit_selection">完成</string>
+    <string name="grant_select_all">全选</string>
+    <string name="grant_clear_selection">取消全选</string>
+    <string name="grant_selected_count">已选 %1$d 项</string>
+    <string name="grant_remove_count">移除 (%1$d)</string>
+    <string name="grant_remove">移除授权</string>
+    <string name="grant_details">详情</string>
+    <string name="grant_actions">位置操作：%1$s</string>
+    <string name="grant_root_hint">点击进入，左滑管理；长按可多选。移除授权不会删除文件。</string>
+    <string name="grant_unavailable">暂不可读取，可查看详情、重新授权或移除记录。</string>
+    <string name="grant_write_only">无读取权限</string>
+    <string name="grant_flags">读取：%1$s　写入：%2$s</string>
+    <string name="grant_yes">已授权</string>
+    <string name="grant_no">未授权</string>
+    <string name="grant_exact_uri">原始授权 URI：\n%1$s</string>
+    <string name="grant_copy_path">复制路径</string>
+    <string name="grant_copied">路径已复制。</string>
+    <string name="grant_uri_copied">已复制位置 URI。</string>
+    <string name="grant_refresh">刷新授权列表</string>
+    <string name="grant_tools">列表操作</string>
+    <string name="grant_confirm_title">移除 %1$d 项授权？</string>
+    <string name="grant_confirm_intro">以下是本次完整目标清单。仅移除本工具保存的访问授权，PDF、JSON、文件夹和笔记均保留。当前文件来源之后可能需要重新授权；其他重叠授权仍可能覆盖同一路径。以后可重新选择文件夹授权。\n\n</string>
+    <string name="grant_confirm_item">%1$d. %2$s\n%3$s\n%4$s\n</string>
+    <string name="grant_confirm_button">移除授权</string>
+    <string name="grant_cancel">返回</string>
+    <string name="grant_done">知道了</string>
+    <string name="grant_busy">当前有文件读取、生成或恢复任务，暂时不能修改授权。可继续浏览或取消选择。</string>
+    <string name="grant_removing">正在移除授权…可取消选择返回，已开始的撤权将完成。</string>
+    <string name="grant_result_title">授权处理结果</string>
+    <string name="grant_result_summary">已移除 %1$d 项；失败 %2$d 项；已不存在 %3$d 项；未处理 %4$d 项。\n磁盘上的文件与笔记均未删除。</string>
+    <string name="grant_result_changed">确认后系统授权已变化，已停止剩余操作。请刷新并重新选择。</string>
+    <string name="grant_result_verification_error">未能核实剩余授权，已停止：%1$s</string>
+    <string name="grant_result_released">已移除</string>
+    <string name="grant_result_missing">授权已不存在</string>
+    <string name="grant_result_failed">失败：%1$s</string>
+    <string name="grant_result_unprocessed">未处理</string>
+    <string name="grant_operation_failed">无法更新授权：%1$s。没有执行文件删除，请刷新后重试。</string>
+</resources>
