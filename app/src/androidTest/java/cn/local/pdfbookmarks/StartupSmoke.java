@@ -16,7 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Device-only smoke runner; it never selects or processes a PDF, JSON or note. */
+/** Device-only smoke runner; document processing is confined to new synthetic cache inputs. */
 public final class StartupSmoke extends Instrumentation {
     private static final long RECREATE_TIMEOUT_MS = 10000;
 
@@ -93,7 +93,7 @@ public final class StartupSmoke extends Instrumentation {
         result.putString("reviewWorkspaceSmoke", reviewWorkspaceResult);
         result.putString("windowSmoke", windowResult);
         result.putString("grantPickerSmoke", grantResult);
-        result.putString("scope", "Activity startup, system bars, recreation, synthetic review/draft and v1.4 workflow controls, read-only grant picker gestures; no real document operation, grant revocation or update request");
+        result.putString("scope", "Activity startup, system bars, recreation, synthetic review/draft and v1.4 controls plus Main file:// generation/save, read-only grant picker gestures; no user document operation, grant revocation or update request; file:// pipeline is not SAF provider acceptance");
         if (failure == null) {
             result.putString("stream", "\nPASS: MainActivity startup and recreation; 6 system-bar checks; appearance preferences unchanged.\n");
         } else {

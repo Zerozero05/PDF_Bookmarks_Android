@@ -22,7 +22,15 @@ README 提供编号摘要，本文件保存每次完整记录；日期采用 `YY
 
 保留PDF同路径安全替换与另存、默认保留手动享做目录／可选整树替换成功后清除本次目录副本、PDF备份、仅同步、JSON独立可选删除、统一旧件清理和中断恢复、分享、授权管理及更新全部原能力。新版只改变展示与流程衔接，危险动作仍按原确认及内容核验执行。
 
-验证状态：最终build-03离线71项任务成功，21秒（23执行／48已是最新），主APK与原生组件均编译通过；24份XML共331项JUnit，328通过、0失败／错误、3项缺旧样本按原规则跳过。lint0错误／25警告，本轮新增告警全部处理，无规则放宽；首轮build-01与中间build-02保留各自日志，不代替最终集成结果。主APK10,975,471字节，SHA-256为`68312df2ba849ecbb274195fccf9179623ba232914598ba84bf3d34d6efdb994`；apksigner v2及原证书、包名／1.4.0／code17／min26／target35／原两权限核验通过，源码及交付附件尚待打包和独立核验。宿主复用旧回归的127页／47条派生PDF及原完整树证据，候选四输出经独立pypdf核验全部页面对象、页面框、旋转、内容、文本、元数据／XMP、完整源字节前缀和全部标题／层级／目标一致；原始PDF及JSON已不存在，本轮不冒称重新验证原始输入。PDF引擎未改，少量宿主计时仅作波动记录，不证明UI提速。ADB当前无设备，原生组件及本轮实机交互尚未运行；D69–D80全部保留尚未验证，旧v1.3.0实机结果不继承为本轮通过。见[本轮验证](VALIDATION.md#candidate-v140-2026-10-24)。
+电脑验证：build-03离线71项任务成功，21秒（23执行／48已是最新），主APK与原生组件均编译通过；当时24份XML共331项JUnit，328通过、0失败／错误、3项因未提供fixture按原规则跳过。lint0错误／25警告，本轮新增告警全部处理，无规则放宽；首轮build-01与中间build-02保留各自日志。随后build-04／05仅重建原生组件并运行lint，各51任务成功，分别14／13秒；最终build07原生组件与lint共51任务／14秒成功，7执行／44已是最新，生产主APK未变。后续核实混合页快照仍保留，仅此前未传路径；按历史manifest核验原生`catalog.json.temp`、pageids、doc及PDF的原SHA，pypdf实读344页，将原temp原字节复制为独立fixture要求的`catalog.json`文件名，不重建JSON，不冒用内容不同的现存catalog。build06全量JUnit实际331项中329通过、0失败／错误、2项仍缺原70条JSON的案例跳过，20任务／7秒；原源码与断言未改。辅助准备脚本首轮误要求现存catalog等于temp，在写入前停止，无副作用，失败记录保留。该恢复不等于原70条JSON或127页／47条原始PDF＋JSON已恢复。
+
+主APK仍为10,975,471字节，SHA-256为`68312df2ba849ecbb274195fccf9179623ba232914598ba84bf3d34d6efdb994`；apksigner v2及原证书、包名／1.4.0／code17／min26／target35／原两权限核验通过。源码及最终交付附件完成打包／独立核验后，由外部交接记录结果，不在源码ZIP包内嵌入其自身哈希，也不提前宣称最终交付核验通过。
+
+本轮设备已连接并获授权，MRO-W00／API31的Main启动／重建及6次系统栏检查通过，Window／Workflow／Review组件分项PASS：3组外观、真实横竖2／2、PDF／JSON文件列表及空路径取消、旧草稿与8项AtomicFile、新合成核对区的真实来源索引、窗口／大字／分段和位图预览。两张常规／大字深色核对截图已目视，页面明确为合成位图，不是实际PDF渲染；一次真实COLD启动458ms仅记录单次启动，不证明提速。
+
+前两轮完整runner为FAIL，Workflow140先后停在关闭弹窗引用异步清理、JSON确认正按钮回调尚未执行的测试时序断言；保留原严格断言，仅修正测试排队时序，原失败日志不改写为通过。第三轮`instrumentation-03.log`完整runner为PASS，Workflow140通过JSON保留完成／取消、合成生成失败返回、最终PDF身份和调整页码草稿capture及更多外观／更新／帮助入口。第四轮未加-r只返回PASS stream，严格收集器拒绝计为完整证据；无新源码修改或新断言失败，第五轮`instrumentation-05-raw.log`补齐完整Bundle并全部PASS。Main在本应用缓存内以合成file://输入实际通过四阶段：JSON哈希变化在ready／备份产生前拒绝；非SAF原路径替换预检拒绝；真实生成5页／3条多级书签，拦截ACTION_CREATE_DOCUMENT取消后保留ready与SAVE AWAITING；实际onActivityResult→exportTo→finishSave后输出精确字节／完整树、SAVE SUCCESS／JSON RETAINED及独立测试草稿清除。五份合成证据已复制到外部device/main-pipeline05，独立pypdf确认5页／3条完整树且ready与saved字节相同，原输入／原草稿SHA、备份清单大小／修改时间与偏好保持；不冒充真实SAF或享做正向事务。Grant真实可见授权根0且无精确持久tree grant，固定取消、原持久URI及read/write flags与Main输入保持通过，不推断持久单文档授权为空；根左滑／多选／详情／移除确认等SKIP，不沿用v1.3.0两个根的历史结果。收尾先展示精确测试包路径／数据目录，再仅移除临时test并独立核实不存在，主包SHA、UID10229／首次安装时间与四组原偏好保持，USB恢复原0并读回，宿主文件未清理。最终Main冷启动COLD／486ms／Status ok与截图布局无溢出、当前PID无FATAL仅记实际观察，不声称提速。真实SAF／享做笔记事务、同一任务草稿冷重启恢复、物理分屏／系统字号和实际清理／删除仍未验证，见[D69–D80](docs/DEVICE_ACCEPTANCE.md#v140-流程与界面验收)。
+
+宿主复用旧回归的127页／47条派生PDF及原完整树证据，候选四输出经独立pypdf核验全部页面对象、页面框、旋转、内容、文本、元数据／XMP、完整源字节前缀和全部标题／层级／目标一致；原始PDF及JSON已不存在，本轮不冒称重新验证原始输入。PDF引擎未改，少量宿主计时仅作波动记录，不证明UI提速。旧v1.3.0实机结果不继承为本轮通过，完整范围见[本轮验证](VALIDATION.md#candidate-v140-2026-10-24)。
 
 仅方法参考Android官方[自适应布局](https://developer.android.com/develop/ui/views/layout/canonical-layouts)及[无障碍应用原则](https://developer.android.com/guide/topics/ui/accessibility/apps)，采用窗口适配、操作层级、可辨提示与基础触控原则；继续使用既有原生Views，不复制第三方代码、不引入框架或新依赖。本轮不公开发行、推送标签或清理本机文件。
 

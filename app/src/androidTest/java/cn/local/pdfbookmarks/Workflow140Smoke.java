@@ -7,9 +7,11 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Looper;
+import android.os.Handler;
 import android.os.SystemClock;
 import android.provider.DocumentsContract;
 import android.view.KeyEvent;
@@ -23,10 +25,20 @@ import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.tom_roush.pdfbox.pdmodel.PDDocument;
+import com.tom_roush.pdfbox.pdmodel.PDPage;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -39,8 +51,10 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
-/** Actual workflow controls with synthetic state only; no document stream, grant or preference write. */
+/** Actual workflow controls and a UUID-cache-only PDF pipeline; no user document, grant or preference write. */
 public final class Workflow140Smoke {
     private static final int SAVE_PDF = 3;
     private static final String SOURCE = "{\"version\":1,\"bookmarks\":[{\"title\":\"合成章节\",\"pdf_page\":2}]}";
@@ -51,10 +65,15 @@ public final class Workflow140Smoke {
         if (Looper.myLooper() == Looper.getMainLooper()) throw new IllegalStateException("Use instrumentation worker thread");
         Fixture fixture = new Fixture(activity);
         Throwable failure = null;
+        String pipelineResult = "NOT_RUN";
         try {
+            drainActivityQueues(instrumentation, activity);
             onMain(instrumentation, fixture::open);
             verifyMissingInputs(instrumentation, fixture);
             onMain(instrumentation, () -> verifyImportDiagnostics(fixture));
+            // Dialog visibility changes immediately; its OnDismissListener clears the owned reference on the queue.
+            instrumentation.waitForIdleSync();
+            onMain(instrumentation, () -> verifyEmptyImportDiagnostics(fixture));
             onMain(instrumentation, () -> {
                 fixture.document();
                 fixture.outcome.begin("合成取消另存");
@@ -83,6 +102,12 @@ public final class Workflow140Smoke {
                 fixture.memory.values.clear();
                 verifySavedResult(fixture);
                 verifyFailedActions(fixture);
+            });
+            // AlertDialog dispatches its positive-button callback and dismissal through the main queue.
+            instrumentation.waitForIdleSync();
+            onMain(instrumentation, () -> {
+                verifyKeptJson(fixture);
+                verifyGenerationFailure(fixture);
                 verifyReplacedPdfDraft(fixture);
             });
             verifyMenu(instrumentation, fixture, "外观");
@@ -113,12 +138,14 @@ public final class Workflow140Smoke {
                         "Context help omitted the authorization boundary");
                 require(detail.getButton(AlertDialog.BUTTON_POSITIVE).performClick(), "Help detail did not close");
             });
+            pipelineResult = verifyMainPipeline(instrumentation, fixture);
         } catch (Throwable error) {
             failure = error;
         } finally {
             AtomicReference<Throwable> restoration = new AtomicReference<>();
             if (fixture.menuOpen) attemptRestore(restoration, () -> dismissOwnedMenu(instrumentation, activity));
             if (fixture.errorOpen) attemptRestore(restoration, () -> tap(instrumentation, activity, "知道了"));
+            attemptRestore(restoration, () -> fixture.quiesce(instrumentation));
             attemptRestore(restoration, () -> onMain(instrumentation, fixture::close));
             attemptRestore(restoration, () -> {
                 instrumentation.waitForIdleSync();
@@ -134,7 +161,252 @@ public final class Workflow140Smoke {
                 + "persistent failure reasons, save-options continuation, catalog-only retry confirmation and explicit keep-JSON completion; "
                 + "replacement draft capture uses the final PDF identity and preserves adjusted targets without draft I/O; "
                 + "More > Appearance/updates/help reachable; no update check/download/install requested; "
-                + "only synthetic state/URIs, all original workflow/review/appearance preferences unchanged";
+                + "all original workflow/review/appearance preferences unchanged; " + pipelineResult;
+    }
+
+    private static String verifyMainPipeline(Instrumentation instrumentation, Fixture fixture) throws Exception {
+        Activity activity = fixture.activity;
+        drainActivityQueues(instrumentation, activity);
+        Pipeline pipeline = new Pipeline(activity, (DraftStore) fixture.fields.get("draftStore"));
+        IntentFilter filter = new IntentFilter(Intent.ACTION_CREATE_DOCUMENT);
+        filter.addCategory(Intent.CATEGORY_OPENABLE); filter.addDataType("application/pdf");
+        Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(filter,
+                new Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null), true);
+        Throwable failure = null;
+        StringBuilder report = new StringBuilder("Actual Main file:// synthetic pipeline\nEvidence: ").append(pipeline.root).append('\n');
+        try {
+            fixture.pipelineActive = true; fixture.pipelineSafeToRestore = false;
+            onMain(instrumentation, () -> {
+                set(fixture.syntheticReview, "windowConfigured", false);
+                fixture.syntheticReview.setDocument(pipeline.parsed, 5);
+                set(activity, "sourceFile", pipeline.source); set(activity, "readyFile", pipeline.ready);
+                set(activity, "pdfUri", Uri.fromFile(pipeline.source)); set(activity, "jsonUri", Uri.fromFile(pipeline.json));
+                set(activity, "pdfName", pipeline.source.getName()); set(activity, "jsonName", pipeline.json.getName());
+                set(activity, "pdfHash", pipeline.sourceHash); set(activity, "jsonHash", pipeline.jsonHash);
+                set(activity, "parsed", pipeline.parsed); set(activity, "info", pipeline.info); set(activity, "diagnostics", null);
+                set(activity, "draftStore", pipeline.store); set(activity, "savedDraft", pipeline.seed);
+                set(activity, "restoreDraft", null); set(activity, "draftError", null); set(activity, "draftSave", null);
+                set(activity, "draftRevision", 1L); set(activity, "storedDraftRevision", 1L);
+                set(activity, "draftCompleted", false); set(activity, "restoringDraft", false);
+                set(activity, "sourceNeedsReload", false); set(activity, "catalogRetry", null);
+                set(activity, "exportedUri", null); set(activity, "exportedName", "");
+                set(activity, "readyVerified", false); set(activity, "deleteOnExport", false);
+                ((CheckBox) field(activity, "deleteJson")).setChecked(false);
+                ((CheckBox) field(activity, "syncEnjoy")).setChecked(false);
+                ((CheckBox) field(activity, "overwrite")).setChecked(false);
+                ((CheckBox) field(activity, "confirmed")).setChecked(true);
+                invoke(activity, "updateButtons");
+            });
+
+            writeBytes(pipeline.json, (Pipeline.JSON + "\n ").getBytes(StandardCharsets.UTF_8));
+            pipeline.alertClose = "返回";
+            onMain(instrumentation, () -> invoke(activity, "generateOutput"));
+            awaitPipelinePhase(instrumentation, fixture, TaskOutcome.Status.SKIPPED, TaskOutcome.Status.FAILED);
+            drainActivityQueues(instrumentation, activity);
+            onMain(instrumentation, () -> require(fixture.outcome.entries().get(1).detail.contains("预览后发生变化"),
+                    "Stale JSON hash did not fail at source identity preflight"));
+            pipeline.requireRejected(activity, fixture);
+            require(monitor.getHits() == 0, "A rejected preflight attempted to open a save picker");
+            tap(instrumentation, activity, "返回"); pipeline.alertClose = null; instrumentation.waitForIdleSync();
+            report.append("PASS 1: changed synthetic JSON rejected before generation; source, backup inventories, journal preferences and original draft unchanged\n");
+
+            writeBytes(pipeline.json, Pipeline.JSON.getBytes(StandardCharsets.UTF_8));
+            onMain(instrumentation, () -> {
+                ((CheckBox) field(activity, "overwrite")).setChecked(true);
+                ((CheckBox) field(activity, "confirmed")).setChecked(true);
+                invoke(activity, "generateOutput");
+            });
+            pipeline.alertClose = "返回";
+            awaitPipelinePhase(instrumentation, fixture, TaskOutcome.Status.SKIPPED, TaskOutcome.Status.FAILED);
+            drainActivityQueues(instrumentation, activity);
+            onMain(instrumentation, () -> require(fixture.outcome.entries().get(1).detail.contains("授权原文件所在文件夹"),
+                    "A non-SAF file URI was not rejected at replacement capability preflight"));
+            pipeline.requireRejected(activity, fixture);
+            require(monitor.getHits() == 0, "Rejected replacement preflight reached the save picker");
+            tap(instrumentation, activity, "返回"); pipeline.alertClose = null; instrumentation.waitForIdleSync();
+            report.append("PASS 2: file URI replacement rejected before generating ready PDF or backup\n");
+
+            pipeline.alertClose = "返回";
+            onMain(instrumentation, () -> {
+                ((CheckBox) field(activity, "overwrite")).setChecked(false);
+                ((CheckBox) field(activity, "deleteJson")).setChecked(false);
+                ((CheckBox) field(activity, "confirmed")).setChecked(true);
+                invoke(activity, "generateOutput");
+            });
+            awaitPipelinePhase(instrumentation, fixture, TaskOutcome.Status.SUCCESS, TaskOutcome.Status.AWAITING_USER);
+            drainActivityQueues(instrumentation, activity);
+            pipeline.alertClose = null;
+            require(monitor.getHits() == 1 && monitor.getLastActivity() == null,
+                    "The create-document picker was not blocked exactly once with a cancelled result");
+            require(pipeline.ready.isFile() && !pipeline.output.exists(), "Generation did not retain only the verified unsaved output");
+            requireRows(pipeline.parsed.rows, PdfBookmarks.inspect(pipeline.ready));
+            require(pipeline.sourceHash.equals(sha256(pipeline.source)) && pipeline.jsonHash.equals(sha256(pipeline.json)),
+                    "Generation changed a synthetic input");
+            onMain(instrumentation, () -> require((Boolean) field(activity, "readyVerified")
+                            && fixture.outcome.overall() == TaskOutcome.Overall.WAITING_ACTION,
+                    "Picker cancellation did not leave a verified output awaiting explicit save"));
+            pipeline.requireProtected(activity, fixture);
+            report.append("PASS 3: real Main generation produced all 3 hierarchical bookmarks; blocked picker cancellation retains ready output\n");
+
+            Uri output = Uri.fromFile(pipeline.output);
+            pipeline.alertClose = "知道了";
+            onMain(instrumentation, () -> invoke(activity, "onActivityResult",
+                    new Class<?>[]{int.class, int.class, Intent.class}, SAVE_PDF, Activity.RESULT_OK, new Intent().setData(output)));
+            awaitPipelinePhase(instrumentation, fixture, TaskOutcome.Status.SUCCESS, TaskOutcome.Status.SUCCESS);
+            drainActivityQueues(instrumentation, activity);
+            pipeline.alertClose = null;
+            require(pipeline.output.isFile() && sha256(pipeline.ready).equals(sha256(pipeline.output)),
+                    "Actual save continuation did not copy and reread the exact generated bytes");
+            requireRows(pipeline.parsed.rows, PdfBookmarks.inspect(pipeline.output));
+            require(pipeline.sourceHash.equals(sha256(pipeline.source)) && pipeline.jsonHash.equals(sha256(pipeline.json)),
+                    "Actual save continuation changed the source PDF or JSON");
+            onMain(instrumentation, () -> require(output.equals(field(activity, "exportedUri"))
+                            && fixture.outcome.entries().get(3).status == TaskOutcome.Status.RETAINED
+                            && fixture.outcome.overall() == TaskOutcome.Overall.COMPLETE
+                            && (Boolean) field(activity, "draftCompleted") && !(Boolean) field(activity, "deleteOnExport"),
+                    "Actual continuation did not complete save while retaining the JSON"));
+            DraftStore.LoadResult cleared = pipeline.store.load();
+            require(cleared.draft == null && cleared.error == null, "Completion did not clear only the isolated synthetic draft");
+            pipeline.requireProtected(activity, fixture);
+            report.append("PASS 4: actual Main export/finishSave verified exact bytes and full tree; JSON retained; isolated draft completed\n");
+        } catch (Throwable error) {
+            failure = error; report.append("FAIL: ").append(error).append('\n');
+        } finally {
+            AtomicReference<Throwable> restoration = new AtomicReference<>();
+            // Keep the blocking picker monitor until every worker-to-UI callback has finished.
+            attemptRestore(restoration, () -> fixture.quiesce(instrumentation));
+            if (pipeline.alertClose != null) attemptRestore(restoration, () -> tap(instrumentation, activity, pipeline.alertClose));
+            if (fixture.pipelineSafeToRestore) attemptRestore(restoration, () -> instrumentation.removeMonitor(monitor));
+            attemptRestore(restoration, () -> pipeline.requireProtected(activity, fixture));
+            if (restoration.get() != null) report.append("RESTORATION FAIL: ").append(restoration.get()).append('\n');
+            attemptRestore(restoration, () -> writeBytes(new File(pipeline.root, "checks.txt"),
+                    report.toString().getBytes(StandardCharsets.UTF_8)));
+            if (restoration.get() != null) {
+                if (failure == null) failure = restoration.get(); else failure.addSuppressed(restoration.get());
+            }
+        }
+        rethrow(failure);
+        return "actual Main file:// synthetic pipeline 4 stages PASS (not SAF provider acceptance); retained evidence: " + pipeline.root;
+    }
+
+    private static void awaitPipelinePhase(Instrumentation instrumentation, Fixture fixture,
+                                          TaskOutcome.Status pdf, TaskOutcome.Status save) throws Exception {
+        long deadline = SystemClock.uptimeMillis() + 15000;
+        boolean[] reached = new boolean[1];
+        while (SystemClock.uptimeMillis() < deadline) {
+            instrumentation.waitForIdleSync();
+            onMain(instrumentation, () -> reached[0] = !(Boolean) field(fixture.activity, "busy")
+                    && (Integer) field(fixture.activity, "systemPickerRequest") == 0
+                    && fixture.outcome.entries().get(0).status == pdf && fixture.outcome.entries().get(1).status == save);
+            if (reached[0]) return;
+            SystemClock.sleep(30);
+        }
+        throw new AssertionError("Main synthetic pipeline did not reach idle " + pdf + "/" + save);
+    }
+
+    private static void drainActivityQueues(Instrumentation instrumentation, Activity activity) throws Exception {
+        ((ExecutorService) field(activity, "worker")).submit(() -> { }).get(20, TimeUnit.SECONDS);
+        instrumentation.waitForIdleSync();
+        ((ExecutorService) field(activity, "draftWriter")).submit(() -> { }).get(20, TimeUnit.SECONDS);
+        instrumentation.waitForIdleSync();
+    }
+
+    private static final class Pipeline {
+        static final String JSON = "{\"version\":1,\"bookmarks\":[{\"title\":\"合成第一章\",\"pdf_page\":1,"
+                + "\"children\":[{\"title\":\"合成第一节\",\"pdf_page\":2}]},{\"title\":\"合成第二章\",\"pdf_page\":4}]}";
+        final File root, source, json, ready, output;
+        final String sourceHash, jsonHash;
+        final TocParser.Parsed parsed;
+        final PdfBookmarks.Info info;
+        final DraftStore store, originalStore;
+        final ReviewDraft seed;
+        final Map<String, String> protectedState;
+        String alertClose;
+
+        Pipeline(Activity activity, DraftStore originalStore) throws Exception {
+            this.originalStore = originalStore; protectedState = protectedState(activity, originalStore);
+            File cache = activity.getCacheDir().getCanonicalFile();
+            root = new File(cache, "workflow140-main-" + UUID.randomUUID()).getCanonicalFile();
+            require(cache.equals(root.getParentFile()) && root.mkdir(), "Cannot establish the unique synthetic pipeline directory");
+            source = new File(root, "source.pdf"); json = new File(root, "source.json");
+            ready = new File(root, "ready.pdf"); output = new File(root, "saved.pdf");
+            try (PDDocument document = new PDDocument()) {
+                for (int page = 0; page < 5; page++) document.addPage(new PDPage());
+                document.save(source);
+            }
+            writeBytes(json, JSON.getBytes(StandardCharsets.UTF_8));
+            sourceHash = sha256(source); jsonHash = sha256(json);
+            parsed = TocParser.parse(JSON, 5); info = PdfBookmarks.inspect(source);
+            require(info.pageCount == 5 && info.existingCount == 0 && parsed.rows.size() == 3,
+                    "Synthetic integration inputs do not match their declared scope");
+            File draft = new File(root, "draft"); require(draft.mkdir(), "Cannot create isolated draft directory");
+            store = new DraftStore(draft);
+            seed = ReviewDraft.capture(Uri.fromFile(source).toString(), Uri.fromFile(json).toString(), sourceHash, jsonHash,
+                    parsed.rows, parsed.rows, 5, "", Collections.emptyList(), -1, 0, "", 0, 0);
+            store.save(seed);
+        }
+
+        void requireRejected(Activity activity, Fixture fixture) throws Exception {
+            require(sourceHash.equals(sha256(source)) && !ready.exists() && !output.exists(),
+                    "Rejected preflight changed the source or created a generated/saved PDF");
+            String[] children = root.list(); require(children != null, "Cannot inspect synthetic pipeline directory");
+            Arrays.sort(children); require(Arrays.equals(new String[]{"draft", "source.json", "source.pdf"}, children),
+                    "Rejected preflight created an unexpected backup or journal beside its inputs");
+            requireProtected(activity, fixture);
+        }
+
+        void requireProtected(Activity activity, Fixture fixture) throws Exception {
+            require(protectedState.equals(protectedState(activity, originalStore)),
+                    "Synthetic pipeline changed an original draft or real backup inventory");
+            fixture.assertPreferencesUnchanged();
+            require(fixture.memory.values.isEmpty(), "Synthetic pipeline created a recovery journal");
+        }
+    }
+
+    private static Map<String, String> protectedState(Activity activity, DraftStore store) throws Exception {
+        Map<String, String> result = new LinkedHashMap<>();
+        File base = ((android.util.AtomicFile) field(store, "file")).getBaseFile();
+        for (String suffix : new String[]{"", ".bak", ".new"}) {
+            File file = new File(base.getPath() + suffix);
+            result.put(file.getAbsolutePath(), file.exists() ? sha256(file) : "missing");
+        }
+        inventory(new File(activity.getFilesDir(), "pdf-backups"), result);
+        inventory(new File(activity.getFilesDir(), "enjoy-catalog-backups"), result);
+        return result;
+    }
+
+    private static void inventory(File file, Map<String, String> result) throws IOException {
+        if (!file.exists()) { result.put(file.getAbsolutePath(), "missing"); return; }
+        result.put(file.getAbsolutePath(), file.isDirectory() ? "directory" : file.length() + ":" + file.lastModified());
+        if (file.isDirectory()) {
+            File[] children = file.listFiles(); if (children == null) throw new IOException("Cannot read backup inventory");
+            Arrays.sort(children, (left, right) -> left.getName().compareTo(right.getName()));
+            for (File child : children) inventory(child, result);
+        }
+    }
+
+    private static void requireRows(List<TocParser.Row> expected, PdfBookmarks.Info actual) {
+        require(actual.pageCount == 5 && actual.existingRows.size() == expected.size(), "Saved PDF lost pages or bookmarks");
+        for (int index = 0; index < expected.size(); index++) {
+            TocParser.Row before = expected.get(index), after = actual.existingRows.get(index);
+            require(before.level == after.level && before.pdfPage == after.pdfPage && before.title.equals(after.title),
+                    "Saved PDF changed a title, hierarchy or physical target at row " + index);
+        }
+    }
+
+    private static String sha256(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (FileInputStream input = new FileInputStream(file)) {
+            byte[] bytes = new byte[16384]; int count;
+            while ((count = input.read(bytes)) != -1) digest.update(bytes, 0, count);
+        }
+        StringBuilder text = new StringBuilder();
+        for (byte value : digest.digest()) text.append(String.format(java.util.Locale.ROOT, "%02x", value & 255));
+        return text.toString();
+    }
+
+    private static void writeBytes(File file, byte[] value) throws IOException {
+        try (FileOutputStream output = new FileOutputStream(file)) { output.write(value); output.getFD().sync(); }
     }
 
     private static void verifyMissingInputs(Instrumentation instrumentation, Fixture fixture) throws Exception {
@@ -184,6 +456,11 @@ public final class Workflow140Smoke {
                         && field(activity, "parsed") == null && field(activity, "info") == null
                         && field(activity, "readJob") == null && !(Boolean) field(activity, "busy"),
                 "Cancelling import details changed the report or began document processing");
+    }
+
+    private static void verifyEmptyImportDiagnostics(Fixture fixture) throws Exception {
+        Activity activity = fixture.activity;
+        TextView summary = (TextView) field(activity, "changeSummary");
         set(activity, "diagnostics", null); invoke(activity, "updateButtons");
         require(!summary.isClickable() && !summary.hasOnClickListeners() && !summary.performClick()
                         && field(activity, "workflowDialog") == null,
@@ -324,6 +601,10 @@ public final class Workflow140Smoke {
         require(action(activity, "保留JSON，结束此可选步骤").performClick(), "JSON completion could not be reopened");
         keep = (AlertDialog) field(activity, "workflowDialog");
         require(keep.getButton(AlertDialog.BUTTON_POSITIVE).performClick(), "Explicit Keep JSON did not complete the optional step");
+    }
+
+    private static void verifyKeptJson(Fixture fixture) throws Exception {
+        Activity activity = fixture.activity;
         require(fixture.outcome.entries().get(3).status == TaskOutcome.Status.RETAINED
                         && !((CheckBox) field(activity, "deleteJson")).isChecked()
                         && fixture.saved.equals(field(activity, "exportedUri")) && fixture.json.equals(field(activity, "jsonUri")),
@@ -334,6 +615,10 @@ public final class Workflow140Smoke {
                         && ((List<?>) field(activity, "resultActions")).isEmpty()
                         && !(Boolean) field(activity, "busy") && field(activity, "readJob") == null,
                 "Keep JSON left a failure action or started another document operation");
+    }
+
+    private static void verifyGenerationFailure(Fixture fixture) throws Exception {
+        Activity activity = fixture.activity;
         set(activity, "exportedUri", null);
         fixture.outcome.begin("合成生成失败"); fixture.outcome.set(TaskOutcome.Part.PDF, TaskOutcome.Status.FAILED, "合成输入错误");
         fixture.outcome.set(TaskOutcome.Part.SAVE, TaskOutcome.Status.SKIPPED, "未运行保存");
@@ -411,7 +696,7 @@ public final class Workflow140Smoke {
         SharedPreferences updatePreferences;
         boolean hadAutomaticUpdate, automaticUpdate;
         int scrollX, scrollY;
-        boolean captured, menuOpen, errorOpen;
+        boolean captured, menuOpen, errorOpen, pipelineActive, pipelineSafeToRestore;
 
         Fixture(Activity activity) {
             this.activity = activity;
@@ -435,11 +720,14 @@ public final class Workflow140Smoke {
                 require(!(value instanceof Dialog) || !((Dialog) value).isShowing(), "Existing " + modal + " must be left undisturbed");
             }
             require(field(activity, "parsed") == null && field(activity, "exportedUri") == null
+                            && field(activity, "draftSave") == null
                             && ((View) field(activity, "pathEditor")).getVisibility() != View.VISIBLE,
                     "An existing document review or result must be left undisturbed");
             for (String name : new String[]{"pdfUri", "jsonUri", "exportedUri", "pdfName", "jsonName", "exportedName", "pdfHash", "jsonHash", "parsed", "info", "diagnostics",
                     "outcome", "review", "enjoy", "readyVerified", "busy", "systemPickerRequest", "pendingPathRequest",
-                    "pendingPath", "catalogRetry", "sourceNeedsReload"}) fields.put(name, field(activity, name));
+                    "pendingPath", "catalogRetry", "sourceNeedsReload", "sourceFile", "readyFile", "draftStore",
+                    "savedDraft", "restoreDraft", "draftError", "draftSave", "draftRevision", "storedDraftRevision",
+                    "draftCompleted", "restoringDraft", "deleteOnExport", "previewGeneration"}) fields.put(name, field(activity, name));
             captureViews(activity.findViewById(android.R.id.content), (View) field(activity, "utilityPanel"), views);
             focus = activity.getCurrentFocus(); ScrollView scroll = (ScrollView) field(activity, "mainScroll");
             scrollX = scroll.getScrollX(); scrollY = scroll.getScrollY(); captured = true;
@@ -474,8 +762,28 @@ public final class Workflow140Smoke {
             invoke(activity, "updateButtons");
         }
 
+        void quiesce(Instrumentation instrumentation) throws Exception {
+            if (!pipelineActive || pipelineSafeToRestore) return;
+            onMain(instrumentation, () -> {
+                Runnable pending = (Runnable) field(activity, "draftSave");
+                if (pending != null) ((Handler) field(activity, "draftHandler")).removeCallbacks(pending);
+                set(activity, "draftSave", null);
+            });
+            drainActivityQueues(instrumentation, activity);
+            onMain(instrumentation, () -> {
+                Runnable pending = (Runnable) field(activity, "draftSave");
+                if (pending != null) ((Handler) field(activity, "draftHandler")).removeCallbacks(pending);
+                set(activity, "draftSave", null);
+            });
+            // A completed Main worker callback can itself enqueue a draft write/clear.
+            drainActivityQueues(instrumentation, activity);
+            pipelineSafeToRestore = true;
+        }
+
         void close() throws Exception {
             if (!captured) return;
+            require(!pipelineActive || pipelineSafeToRestore,
+                    "Worker queues did not quiesce; retaining synthetic paths instead of exposing original files to late callbacks");
             AtomicReference<Throwable> restoration = new AtomicReference<>();
             for (String name : new String[]{"appearanceDialog", "workflowDialog"}) {
                 attemptRestore(restoration, () -> { Dialog owned = (Dialog) field(activity, name); if (owned != null && owned.isShowing()) owned.dismiss(); });

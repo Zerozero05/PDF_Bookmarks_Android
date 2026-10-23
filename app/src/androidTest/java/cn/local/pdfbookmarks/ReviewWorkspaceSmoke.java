@@ -7,7 +7,12 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Typeface;
 import android.os.Looper;
+import android.os.Process;
 import android.os.SystemClock;
 import android.view.View;
 import android.view.Window;
@@ -19,6 +24,9 @@ import android.widget.RadioButton;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -26,6 +34,9 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** Synthetic review checks; no user file, grant, clipboard or appearance preference is changed. */
@@ -46,6 +57,7 @@ public final class ReviewWorkspaceSmoke {
         Map<String, ?> originalPreferences = new HashMap<>(preferences.getAll());
         Fixture fixture = new Fixture();
         float[] zoomBefore = new float[1];
+        File regularScreenshot = null, largeDarkScreenshot = null;
         Throwable failure = null;
         try {
             onMain(instrumentation, () -> fixture.open(activity));
@@ -97,6 +109,10 @@ public final class ReviewWorkspaceSmoke {
                         "Browsing changed selected source or directory targets");
             });
             awaitLayout(instrumentation, fixture);
+            File screenshotDirectory = createScreenshotDirectory(instrumentation);
+            onMain(instrumentation, fixture::prepareVisualViewport);
+            awaitLayout(instrumentation, fixture);
+            regularScreenshot = captureScreenshot(instrumentation, fixture, screenshotDirectory, "review-regular-synthetic");
             onMain(instrumentation, () -> {
                 ReviewWorkspace review = fixture.review;
                 ReviewWorkspace.State before = review.snapshotState();
@@ -124,6 +140,12 @@ public final class ReviewWorkspaceSmoke {
                 require(panes.getLayoutParams().height > shortHeight && Math.abs(panes.getSplitRatio() - .63f) < .001f,
                         "Review height did not follow viewport height or resize lost its drag ratio");
                 require(sameProgress(before, review.snapshotState()), "Window/appearance change lost review progress");
+            });
+            onMain(instrumentation, fixture::prepareVisualViewport);
+            awaitLayout(instrumentation, fixture);
+            largeDarkScreenshot = captureScreenshot(instrumentation, fixture, screenshotDirectory, "review-large-dark-synthetic");
+            onMain(instrumentation, () -> {
+                ReviewWorkspace review = fixture.review;
                 invoke(review, "showAdjustment");
                 Object adjustment = field(review, "adjustmentDialog");
                 ((RadioButton) field(adjustment, "segmentMode")).setChecked(true);
@@ -193,7 +215,9 @@ public final class ReviewWorkspaceSmoke {
         rethrow(failure);
         return "PASS: source-index reveal, obstructing search/ancestor folds, duplicate titles, busy/invalid navigation, "
                 + "browse/target distinction (loading/failure/fullscreen), window/appearance progress, drag ratio, "
-                + "fixed segment columns, 48dp deletion and explicit-only mapping; synthetic data only";
+                + "fixed segment columns, 48dp deletion and explicit-only mapping; synthetic data only; "
+                + "screenshots show a synthetic page, not PDF rendering; regularScreenshot="
+                + regularScreenshot.getAbsolutePath() + "; largeDarkScreenshot=" + largeDarkScreenshot.getAbsolutePath();
     }
 
     private static final class Fixture {
@@ -209,7 +233,17 @@ public final class ReviewWorkspaceSmoke {
             });
             configured(review, false);
             review.setDocument(TocParser.parse(SOURCE, 40), 40);
-            bitmap = Bitmap.createBitmap(120, 180, Bitmap.Config.ARGB_8888);
+            bitmap = Bitmap.createBitmap(600, 840, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            canvas.drawColor(Color.WHITE);
+            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            paint.setColor(0xff1d3439);
+            paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
+            paint.setTextSize(64);
+            canvas.drawText("合成页面", 80, 370, paint);
+            paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+            paint.setTextSize(28);
+            canvas.drawText("仅供界面测试 · 非实际PDF渲染", 80, 430, paint);
             dialog = new Dialog(appearance.dialogContext(activity));
             dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
             ScrollView shell = new ScrollView(dialog.getContext());
@@ -221,11 +255,57 @@ public final class ReviewWorkspaceSmoke {
 
         void showPage(int page, String title) { review.showBitmap(bitmap, page, title); }
 
+        void prepareVisualViewport() throws Exception {
+            require(!review.hasModalUi(), "A review popup covers the screenshot fixture");
+            View decor = dialog.getWindow().getDecorView();
+            float density = review.getResources().getDisplayMetrics().density;
+            configured(review, false);
+            review.onWindowChanged(Math.max(1, Math.round(decor.getWidth() / density)),
+                    Math.max(1, Math.round(decor.getHeight() / density)));
+            ((ScrollView) review.getParent()).scrollTo(0, 0);
+        }
+
         void close() throws Exception {
             if (review != null) { configured(review, false); review.clearDocument(); }
             if (dialog != null) dialog.dismiss();
             if (bitmap != null) bitmap.recycle();
         }
+    }
+
+    private static File createScreenshotDirectory(Instrumentation instrumentation) throws IOException {
+        Context testContext = instrumentation.getContext();
+        // Instrumentation normally executes under the target UID; never probe another UID's private directory.
+        File root = (testContext.getApplicationInfo().uid == Process.myUid()
+                ? testContext.getFilesDir() : instrumentation.getTargetContext().getCacheDir()).getCanonicalFile();
+        File directory = new File(root, "review140-visual-" + UUID.randomUUID()).getCanonicalFile();
+        require(root.equals(directory.getParentFile()), "Synthetic screenshot directory escaped its permitted root");
+        if (!directory.mkdir()) throw new IOException("Could not create synthetic screenshot directory: " + directory);
+        return directory;
+    }
+
+    /** UiAutomation captures the actual screen on the instrumentation worker; no View.draw substitute. */
+    private static File captureScreenshot(Instrumentation instrumentation, Fixture fixture, File directory, String name)
+            throws Exception {
+        CountDownLatch nextFrame = new CountDownLatch(1);
+        onMain(instrumentation, () -> {
+            View decor = fixture.dialog.getWindow().getDecorView();
+            // A frame must be presented after the appearance/layout change; do not guess a sleep duration.
+            decor.postOnAnimation(() -> decor.postOnAnimation(nextFrame::countDown));
+            decor.invalidate();
+        });
+        require(nextFrame.await(3, TimeUnit.SECONDS), "Screenshot fixture did not present a frame");
+        instrumentation.waitForIdleSync();
+        Bitmap screenshot = instrumentation.getUiAutomation().takeScreenshot();
+        require(screenshot != null, "UiAutomation returned no screenshot");
+        File output = new File(directory, name + ".png");
+        try {
+            try (FileOutputStream stream = new FileOutputStream(output)) {
+                require(screenshot.compress(Bitmap.CompressFormat.PNG, 100, stream), "Screenshot PNG encoding failed");
+                stream.getFD().sync();
+            }
+            require(output.isFile() && output.length() > 0, "Screenshot file is empty");
+            return output;
+        } finally { screenshot.recycle(); }
     }
 
     private static boolean sameProgress(ReviewWorkspace.State before, ReviewWorkspace.State after) {
