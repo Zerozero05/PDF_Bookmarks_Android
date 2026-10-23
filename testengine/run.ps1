@@ -2,15 +2,26 @@ param([string]$JavaHome = '', [string]$Python = '', [string]$InputPdf = '', [str
 $ErrorActionPreference = 'Stop'
 $projectDir = Split-Path $PSScriptRoot -Parent
 $workspaceDir = Split-Path (Split-Path $projectDir -Parent) -Parent
+if (!$JavaHome -and $env:JAVA_HOME) { $JavaHome = $env:JAVA_HOME }
 if (!$JavaHome) {
     $JavaHome = (Get-ChildItem -LiteralPath (Join-Path $workspaceDir 'tooling/jdk') -Directory | Select-Object -First 1).FullName
 }
 if (!$Python) {
-    $Python = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+    if ($env:USERPROFILE) {
+        $candidate = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+        if (Test-Path -LiteralPath $candidate) { $Python = $candidate }
+    }
+    if (!$Python) {
+        $command = Get-Command python3,python -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($command) { $Python = $command.Source }
+    }
 }
-if (!(Test-Path -LiteralPath $Python)) { throw 'Provide -Python with Python 3 and pypdf installed.' }
-$java = Join-Path $JavaHome 'bin/java.exe'
-$javac = Join-Path $JavaHome 'bin/javac.exe'
+if (!$Python -or !(Test-Path -LiteralPath $Python)) { throw 'Provide -Python with Python 3 and pypdf installed.' }
+$suffix = if ([IO.Path]::DirectorySeparatorChar -eq '\') { '.exe' } else { '' }
+$java = Join-Path $JavaHome ('bin/java' + $suffix)
+$javac = Join-Path $JavaHome ('bin/javac' + $suffix)
+if (!(Test-Path -LiteralPath $java) -or !(Test-Path -LiteralPath $javac)) { throw 'Provide -JavaHome with a JDK containing java and javac.' }
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 $dependencyDir = Join-Path $PSScriptRoot 'deps'
 New-Item -ItemType Directory -Path $dependencyDir -Force | Out-Null
 $artifacts = @(
@@ -19,7 +30,7 @@ $artifacts = @(
     @('org/bouncycastle/bcpkix-jdk15to18/1.72', 'bcpkix-jdk15to18-1.72.jar', 'D9B97477B72499BCEE02F5A906510810257FF36A94BF69FBCA0B1E65E7FFDB6E'),
     @('org/bouncycastle/bcutil-jdk15to18/1.72', 'bcutil-jdk15to18-1.72.jar', 'D92184BDEB3105A11AD9E36ACBD66B5F8EED091B08B9C8F3E2549E42B7F131F1'),
     @('com/vaadin/external/google/android-json/0.0.20131108.vaadin1', 'android-json-0.0.20131108.vaadin1.jar', 'DFB7BAE2F404CFE0B72B4D23944698CB716B7665171812A0A4D0F5926C0FAC79'),
-    @('com/google/code/gson/gson/2.11.0', 'gson-2.11.0.jar', '57928D6E5A6EDEB2ABD3770A8F95BA44DCE45F3B23B7A9DC2B309C581552A78B')
+    @('com/google/code/gson/gson/2.14.0', 'gson-2.14.0.jar', '2CBD119BF1961C28788310963DC80BA65F58CDEEC1DD139C8BDB1240FAA2C36F')
 )
 foreach ($artifact in $artifacts) {
     $file = Join-Path $dependencyDir $artifact[1]
@@ -35,7 +46,8 @@ if (!(Test-Path -LiteralPath (Join-Path $aarDir 'classes.jar'))) {
 $buildDir = Join-Path $PSScriptRoot 'build'
 New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 $binaryJars = @($artifacts | Where-Object { $_[1].EndsWith('.jar') } | ForEach-Object { Join-Path $dependencyDir $_[1] })
-$classPath = (Join-Path $aarDir 'classes.jar') + ';' + ($binaryJars -join ';')
+$pathSeparator = [IO.Path]::PathSeparator
+$classPath = (Join-Path $aarDir 'classes.jar') + $pathSeparator + ($binaryJars -join $pathSeparator)
 $sources = @(
     (Join-Path $projectDir 'app/src/main/java/cn/local/pdfbookmarks/TocParser.java'),
     (Join-Path $projectDir 'app/src/main/java/cn/local/pdfbookmarks/PdfBookmarks.java'),
@@ -57,7 +69,7 @@ if ($InputPdf -or $InputJson) {
 }
 $verificationDir = Join-Path $projectDir 'verification'
 New-Item -ItemType Directory -Path $verificationDir -Force | Out-Null
-& $java '-Dfile.encoding=UTF-8' '-Dsun.stdout.encoding=UTF-8' '-Dsun.stderr.encoding=UTF-8' "-Djava.io.tmpdir=$scratchDir" -cp ($buildDir + ';' + $classPath) EngineTests @arguments |
+& $java '-Dfile.encoding=UTF-8' '-Dsun.stdout.encoding=UTF-8' '-Dsun.stderr.encoding=UTF-8' "-Djava.io.tmpdir=$scratchDir" -cp ($buildDir + $pathSeparator + $classPath) EngineTests @arguments |
     Tee-Object -FilePath (Join-Path $verificationDir 'pdf-engine-host.log')
 if ($LASTEXITCODE -ne 0) { throw 'PDF engine host tests failed.' }
 & $Python (Join-Path $PSScriptRoot 'verify_outputs.py') (Join-Path $outputDir 'engine-manifest.json') (Join-Path $verificationDir 'pdf-engine-independent.json') |

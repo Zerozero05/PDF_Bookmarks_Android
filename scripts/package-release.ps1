@@ -18,7 +18,7 @@ if(!$ToolingRoot){$ToolingRoot=[IO.Path]::GetFullPath((Join-Path $projectDirecto
 $jdk=Get-ChildItem -LiteralPath (Join-Path $ToolingRoot 'jdk') -Directory | Select-Object -First 1
 if(!$jdk){throw '缺少JDK，请用-ToolingRoot指定现有工具目录。'}
 $env:JAVA_HOME=$jdk.FullName
-$tools=Join-Path $ToolingRoot 'sdk/build-tools/35.0.0'
+$tools=Join-Path $ToolingRoot 'sdk/build-tools/36.0.0'
 $expectedCertificate=(Get-Content -LiteralPath (Join-Path $projectDirectory 'SIGNING_CERTIFICATE.sha256') -Raw).Trim().ToLowerInvariant()
 if($expectedCertificate -notmatch '^[0-9a-f]{64}$'){throw '升级签名指纹记录无效。'}
 $signature=@(& (Join-Path $tools 'apksigner.bat') verify --verbose --print-certs $built 2>&1)
