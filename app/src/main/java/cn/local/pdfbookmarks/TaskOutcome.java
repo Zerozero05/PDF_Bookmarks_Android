@@ -9,8 +9,11 @@ import java.util.Objects;
 /** Transient result-card state; it does not own files or replace durable recovery records. */
 public final class TaskOutcome {
     public enum Part { PDF, SAVE, CATALOG, JSON, CLEANUP }
-    public enum Status { NOT_REQUESTED, WAITING, RUNNING, SUCCESS, RETAINED, SKIPPED, FAILED }
-    public enum Overall { EMPTY, IN_PROGRESS, COMPLETE, PARTIAL, FAILED }
+    public enum Status {
+        NOT_REQUESTED, WAITING, RUNNING, SUCCESS, RETAINED, SKIPPED, FAILED,
+        AWAITING_USER, RECOVERY_REQUIRED
+    }
+    public enum Overall { EMPTY, IN_PROGRESS, COMPLETE, PARTIAL, FAILED, WAITING_ACTION, RECOVERY_REQUIRED }
 
     public static final class Entry {
         public final Part part;
@@ -50,21 +53,28 @@ public final class TaskOutcome {
 
     public Overall overall() {
         boolean requested = false, pending = false, failed = false, succeeded = false;
+        boolean awaitingUser = false, recoveryRequired = false;
         for (Entry value : values.values()) {
             requested |= value.status != Status.NOT_REQUESTED;
             pending |= value.status == Status.WAITING || value.status == Status.RUNNING;
             failed |= value.status == Status.FAILED;
             succeeded |= value.status == Status.SUCCESS;
+            awaitingUser |= value.status == Status.AWAITING_USER;
+            recoveryRequired |= value.status == Status.RECOVERY_REQUIRED;
         }
         if (!requested) return Overall.EMPTY;
         if (pending) return Overall.IN_PROGRESS;
+        if (recoveryRequired) return Overall.RECOVERY_REQUIRED;
         if (failed) return succeeded ? Overall.PARTIAL : Overall.FAILED;
+        if (awaitingUser) return Overall.WAITING_ACTION;
         return Overall.COMPLETE;
     }
 
     public String summary() {
         switch (overall()) {
             case IN_PROGRESS: return "正在处理";
+            case WAITING_ACTION: return "等待继续操作";
+            case RECOVERY_REQUIRED: return "有待恢复事项，请先处理";
             case COMPLETE: return "已完成";
             case PARTIAL: return "部分完成，请查看未完成项";
             case FAILED: return "未完成，请查看错误信息";

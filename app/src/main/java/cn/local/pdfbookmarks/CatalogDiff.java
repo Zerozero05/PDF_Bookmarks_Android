@@ -19,8 +19,11 @@ public final class CatalogDiff {
     public static final class Summary {
         public final int added, removed, changed, unchanged, titleChanged, pageChanged, hierarchyChanged;
         public final List<String> details;
+        public final List<DirectoryDiff.Change> changes;
+        /** Known one-based physical PDF pages, parallel to details and changes; 0 means unknown. */
+        public final List<Integer> targetPages;
 
-        private Summary(DirectoryDiff.Summary diff, List<String> details) {
+        private Summary(DirectoryDiff.Summary diff, List<String> details, List<Integer> targetPages) {
             added = diff.added;
             removed = diff.removed;
             changed = diff.changed;
@@ -29,6 +32,8 @@ public final class CatalogDiff {
             pageChanged = diff.pageChanged;
             hierarchyChanged = diff.hierarchyChanged;
             this.details = Collections.unmodifiableList(new ArrayList<>(details));
+            changes = diff.changes;
+            this.targetPages = Collections.unmodifiableList(new ArrayList<>(targetPages));
         }
 
         public String counts() {
@@ -51,7 +56,9 @@ public final class CatalogDiff {
         for (Map.Entry<String, Integer> target : targetCodes.entrySet()) ids.put(target.getValue(), target.getKey());
         DirectoryDiff.Summary diff = DirectoryDiff.compare(oldRows, newRows);
         List<String> details = new ArrayList<>();
+        List<Integer> targetPages = new ArrayList<>();
         for (DirectoryDiff.Change change : diff.changes) {
+            targetPages.add(physicalPage(change.after != null ? change.after : change.before, ids, knownPhysicalPages));
             if (change.kind == DirectoryDiff.Kind.ADDED) {
                 details.add("新增 · " + change.afterPath + " · " + target(change.after, ids, knownPhysicalPages));
             } else if (change.kind == DirectoryDiff.Kind.REMOVED) {
@@ -66,7 +73,7 @@ public final class CatalogDiff {
                         + target(change.after, ids, knownPhysicalPages));
             }
         }
-        return new Summary(diff, details);
+        return new Summary(diff, details, targetPages);
     }
 
     public static Summary compare(byte[] before, byte[] after) {
@@ -75,8 +82,13 @@ public final class CatalogDiff {
 
     private static String target(TocParser.Row row, Map<Integer, String> ids, Map<String, Integer> known) {
         String id = ids.get(row.pdfPage);
-        Integer physical = known == null ? null : known.get(id);
-        return (physical != null && physical > 0 ? "PDF 第 " + physical + " 页" : "原笔记页面") + "（页 ID：" + id + "）";
+        int physical = physicalPage(row, ids, known);
+        return (physical > 0 ? "PDF 第 " + physical + " 页" : "原笔记页面") + "（页 ID：" + id + "）";
+    }
+
+    private static int physicalPage(TocParser.Row row, Map<Integer, String> ids, Map<String, Integer> known) {
+        Integer physical = known == null ? null : known.get(ids.get(row.pdfPage));
+        return physical != null && physical > 0 ? physical : 0;
     }
 
     private static List<TocParser.Row> rows(byte[] bytes, Map<String, Integer> codes) {

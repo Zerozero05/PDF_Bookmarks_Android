@@ -38,8 +38,9 @@ public final class MainActivity extends Activity {
     private AlertDialog appearanceDialog;
     private final TaskOutcome outcome=new TaskOutcome();
     private final ArrayList<Button> buttons=new ArrayList<>();
+    private final ArrayList<Button> resultActions=new ArrayList<>();
     private Uri pdfUri,jsonUri,exportedUri;
-    private String pdfName="",jsonName="",pdfHash="",jsonHash="";
+    private String pdfName="",jsonName="",pdfHash="",jsonHash="",exportedName="";
     private File sourceFile,readyFile;
     private TocParser.Parsed parsed;
     private PdfBookmarks.Info info;
@@ -82,6 +83,20 @@ public final class MainActivity extends Activity {
     private final TextView[] steps=new TextView[3];
     private TocDiagnostics.Report diagnostics;
     private AlertDialog workflowDialog;
+    private LinearLayout utilityPanel,enjoyOptions,catalogChoices;
+    private TextView syncHint,resultFile;
+    private Runnable helpAction;
+    private CatalogRetry catalogRetry;
+
+    /** Only the successful PDF revision may be used to continue its failed directory step. */
+    private static final class CatalogRetry {
+        final Uri pdf,json;final String pdfHash,jsonHash;final int pages;
+        final List<TocParser.Row> rows;final boolean replaceAll;
+        CatalogRetry(Uri pdf,String pdfHash,Uri json,String jsonHash,int pages,List<TocParser.Row> rows,boolean replaceAll){
+            this.pdf=pdf;this.pdfHash=pdfHash;this.json=json;this.jsonHash=jsonHash;this.pages=pages;
+            this.rows=Collections.unmodifiableList(new ArrayList<>(rows));this.replaceAll=replaceAll;
+        }
+    }
 
 
     /** 只记录一次已核验成功的替换，不能从旧版备份文件名猜测关联。 */
@@ -126,7 +141,7 @@ public final class MainActivity extends Activity {
         String p=prefs.getString("pdf",null),j=prefs.getString("json",null);
         if(p!=null){pdfUri=Uri.parse(p);pdfName=prefs.getString("pdfName","PDF");pdfLabel.setText(pdfName);}
         if(j!=null){jsonUri=Uri.parse(j);jsonName=prefs.getString("jsonName","JSON");jsonLabel.setText(jsonName);}
-        status.setText(pdfUri!=null||jsonUri!=null?"已记住上次选定的文件，点击预览重新核对。":"选择PDF和对应目录JSON，然后预览。原文件会保留。");
+        status.setText(inputGuidance());
         review.setOnStateChangedListener(()->scheduleDraft(false));
         updateButtons();checkRecovery();loadSavedDraft();
         if(state==null)receiveShare(getIntent());
@@ -164,17 +179,22 @@ public final class MainActivity extends Activity {
     }
     private void scheduleDraft(boolean immediate){
         if(draftSave!=null){draftHandler.removeCallbacks(draftSave);draftSave=null;}
-        if(restoringDraft||draftCompleted||parsed==null||info==null||pdfUri==null||jsonUri==null||review==null||pdfHash.isEmpty()||jsonHash.isEmpty())return;
+        if(restoringDraft||draftCompleted||parsed==null||info==null||pdfUri==null||jsonUri==null||review==null||pdfHash.isEmpty()||jsonHash.isEmpty()||(sourceNeedsReload&&catalogRetry==null))return;
         draftSave=()->{
-            draftSave=null;ReviewWorkspace.State state=review.snapshotState();ArrayList<Integer> collapsed=new ArrayList<>();for(int index:state.collapsedSourceIndices)collapsed.add(index);
+            draftSave=null;
             final ReviewDraft snapshot;
-            try{snapshot=ReviewDraft.capture(pdfUri.toString(),jsonUri.toString(),pdfHash,jsonHash,parsed.rows,currentRows(),info.pageCount,state.query,collapsed,state.selectedSourceIndex,state.previewPage,state.previewTitle,Math.max(0,state.firstListPosition),state.listTopOffset);}
+            try{snapshot=captureReviewDraft();}
             catch(IllegalArgumentException e){draftError="核对草稿未保存："+message(e);updateDraftNotice();return;}
             long revision=++draftRevision;draftWriter.execute(()->{if(revision!=draftRevision)return;try{
                 draftStore.save(snapshot);storedDraftRevision=revision;onUi(()->{if(revision==draftRevision){savedDraft=snapshot;draftError=null;updateDraftNotice();}});
             }catch(IOException e){onUi(()->{if(revision==draftRevision){draftError=message(e);updateDraftNotice();}});}});
         };
         if(immediate)draftSave.run();else draftHandler.postDelayed(draftSave,400);
+    }
+    private ReviewDraft captureReviewDraft(){
+        ReviewWorkspace.State state=review.snapshotState();ArrayList<Integer> collapsed=new ArrayList<>();for(int index:state.collapsedSourceIndices)collapsed.add(index);
+        CatalogRetry retry=sourceNeedsReload?catalogRetry:null;
+        return ReviewDraft.capture(retry==null?pdfUri.toString():retry.pdf.toString(),jsonUri.toString(),retry==null?pdfHash:retry.pdfHash,jsonHash,parsed.rows,currentRows(),info.pageCount,state.query,collapsed,state.selectedSourceIndex,state.previewPage,state.previewTitle,Math.max(0,state.firstListPosition),state.listTopOffset);
     }
     private void completeDraft(){
         draftCompleted=true;savedDraft=null;restoreDraft=null;draftError=null;++draftRevision;
@@ -283,7 +303,7 @@ public final class MainActivity extends Activity {
         LinearLayout shell=column();shellView=shell;setSurface(shell,"page",0,0,0,0);
         LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);toolbar.setPadding(dp(20),dp(10),dp(20),dp(10));
         TextView toolbarTitle=text("PDF目录工具",23);toolbarTitle.setTypeface(null,Typeface.BOLD);toolbar.addView(toolbarTitle,new LinearLayout.LayoutParams(0,-2,1));
-        Button settings=button(toolbar,getString(R.string.ui_appearance),this::showAppearance);
+        Button settings=button(toolbar,"更多",()->showAppMenu(toolbar));
         settings.setLayoutParams(new LinearLayout.LayoutParams(-2,-2));
         cancelRead=new Button(this);cancelRead.setText("取消 / 返回");cancelRead.setAllCaps(false);cancelRead.setTextSize(14);cancelRead.setVisibility(View.GONE);cancelRead.setOnClickListener(v->cancelCurrentInput());toolbar.addView(cancelRead);
         shell.addView(toolbar);
@@ -294,7 +314,7 @@ public final class MainActivity extends Activity {
         setContentView(shell);
         LinearLayout stepBar=new LinearLayout(this);stepBar.setPadding(0,0,0,dp(14));
         String[] stepNames={"1  文件","2  核对","3  结果"};
-        for(int i=0;i<steps.length;i++){steps[i]=text(stepNames[i],14);steps[i].setGravity(Gravity.CENTER);steps[i].setPadding(dp(8),dp(10),dp(8),dp(10));LinearLayout.LayoutParams stepLp=new LinearLayout.LayoutParams(0,-2,1);if(i>0)stepLp.leftMargin=dp(6);stepBar.addView(steps[i],stepLp);}root.addView(stepBar);
+        for(int i=0;i<steps.length;i++){final int step=i;steps[i]=text(stepNames[i],14);steps[i].setGravity(Gravity.CENTER);steps[i].setPadding(dp(8),dp(10),dp(8),dp(10));steps[i].setMinHeight(dp(48));steps[i].setFocusable(true);steps[i].setOnClickListener(v->{if(busy||shareLoading||FilePickerDialog.isGrantChangeRunning())return;if(step==0){setInputsExpanded(true);focusSection(inputBody);}else if(step==1&&parsed!=null)focusSection(reviewCard);else if(step==2&&outputCard.getVisibility()==View.VISIBLE)focusSection(outputCard);else status.setText(inputGuidance());});LinearLayout.LayoutParams stepLp=new LinearLayout.LayoutParams(0,-2,1);if(i>0)stepLp.leftMargin=dp(6);stepBar.addView(steps[i],stepLp);}root.addView(stepBar);
         status=text("",14);setSurface(status,"status",12,10,12,10);status.setTextIsSelectable(true);
         LinearLayout.LayoutParams statusLp=new LinearLayout.LayoutParams(-1,-2);statusLp.bottomMargin=dp(14);root.addView(status,statusLp);
         LinearLayout files=card(root,"1  选择文件");
@@ -323,25 +343,29 @@ public final class MainActivity extends Activity {
         preview.addView(review,new LinearLayout.LayoutParams(-1,-2));
         review.onWindowChanged(getResources().getConfiguration().screenWidthDp,getResources().getConfiguration().screenHeightDp);
         confirmed=new CheckBox(this);confirmed.setText("我已核对目录标题、层级和实际跳转页");confirmed.setOnCheckedChangeListener((b,c)->updateButtons());preview.addView(confirmed);
-        replace=new CheckBox(this);replace.setText("替换PDF已有的整棵目录（有旧目录时才需要）");replace.setOnCheckedChangeListener((b,c)->{invalidateOutput();confirmed.setChecked(false);updateButtons();});preview.addView(replace);
+        replace=new CheckBox(this);replace.setText("PDF书签内容：替换已有的整棵书签目录");replace.setOnCheckedChangeListener((b,c)->{invalidateOutput();confirmed.setChecked(false);updateButtons();});preview.addView(replace);
         LinearLayout output=card(root,"3  生成并保存");
         outputCard=output;
         outputSettings=text("",15);output.addView(outputSettings);
+        resultFile=text("",14);resultFile.setTextIsSelectable(true);resultFile.setMaxLines(3);resultFile.setEllipsize(android.text.TextUtils.TruncateAt.END);resultFile.setVisibility(View.GONE);output.addView(resultFile);
 
         open=button(output,"打开已保存的 PDF",this::openOutput);
         cleanup=button(output,"清理旧文件与备份",this::confirmCleanup);
         LinearLayout options=disclosure(output,"处理选项");optionsPanel=options;
-        overwrite=new CheckBox(this);overwrite.setText("直接替换原 PDF（原路径与名称）");overwrite.setOnCheckedChangeListener((b,c)->updateButtons());options.addView(overwrite);
+        overwrite=new CheckBox(this);overwrite.setText("PDF保存方式：原路径同名替换");overwrite.setOnCheckedChangeListener((b,c)->updateButtons());options.addView(overwrite);
         overwrite.setChecked(true);
-        options.addView(text("保持第1节所选PDF的原路径和名称，先核验新文件，再切换名称并备份原件。更新享做原笔记时，请选择笔记详情中的PDF路径。取消勾选可另存副本。",14));
-        syncEnjoy=new CheckBox(this);syncEnjoy.setText("替换后同步享做目录");syncEnjoy.setOnCheckedChangeListener((b,c)->updateButtons());options.addView(syncEnjoy);syncEnjoy.setChecked(true);
-        options.addView(text("享做目录处理方式",14));
-        catalogMode=new RadioGroup(this);catalogMode.setOrientation(RadioGroup.VERTICAL);catalogMode.setSaveEnabled(false);options.addView(catalogMode);
+        options.addView(text("关闭后另存副本；原路径替换会先核验并保留PDF备份。",14));
+        enjoyOptions=column();options.addView(enjoyOptions);
+        syncEnjoy=new CheckBox(this);syncEnjoy.setText("同时同步享做目录");syncEnjoy.setChecked(true);syncEnjoy.setOnCheckedChangeListener((b,c)->updateButtons());enjoyOptions.addView(syncEnjoy);
+        syncHint=text("",13);enjoyOptions.addView(syncHint);
+        catalogChoices=column();enjoyOptions.addView(catalogChoices);
+        catalogChoices.addView(text("享做目录处理",14));
+        catalogMode=new RadioGroup(this);catalogMode.setOrientation(RadioGroup.VERTICAL);catalogMode.setSaveEnabled(false);catalogChoices.addView(catalogMode);
         keepCatalog=new RadioButton(this);keepCatalog.setId(View.generateViewId());keepCatalog.setSaveEnabled(false);keepCatalog.setText("保留已有目录并添加新目录（默认）");catalogMode.addView(keepCatalog);
         replaceCatalog=new RadioButton(this);replaceCatalog.setId(View.generateViewId());replaceCatalog.setSaveEnabled(false);replaceCatalog.setText("用新目录替换全部已有目录（不保留旧目录备份）");catalogMode.addView(replaceCatalog);
         catalogMode.check(keepCatalog.getId());
         catalogMode.setOnCheckedChangeListener((group,id)->updateButtons());
-        options.addView(text("仅用于已识别的享做资源PDF。同步前请保存笔记，并到系统设置强行停止享做，不要清除数据；完成后重开核对目录、跳转和原笔迹。未知格式、页面映射或文件变化时停止。",14));
+        catalogChoices.addView(text("同步前保存并强行停止享做，不要清除数据。完成后重开核对目录、跳转与笔迹。",13));
         deleteJson=new CheckBox(this);deleteJson.setText("PDF及所选同步成功后，删除所选 JSON");deleteJson.setOnCheckedChangeListener((b,c)->updateButtons());options.addView(deleteJson);
         moreActions=disclosure(output,"更多操作与恢复");moreToggle=(Button)moreActions.getTag();
         export=button(moreActions,"保存已生成的 PDF…",this::saveOutput);
@@ -354,10 +378,12 @@ public final class MainActivity extends Activity {
         recover=button(output,"恢复上次替换前的原 PDF",this::confirmRecovery);
         resultHeading=text(getString(R.string.ui_result_title),17);resultHeading.setTypeface(null,Typeface.BOLD);output.addView(resultHeading);
         resultRows=column();output.addView(resultRows);renderOutcome();
-        updates.attach(disclosure(root,getString(R.string.update_panel,getString(R.string.app_version))));
-        button(root,"使用说明",()->dialogBuilder().setTitle("使用说明").setMessage(
-            "选择PDF与JSON，或粘贴共享存储路径 → 读取并预览 → 滑动目录、点击标题或页码核对目标页 → 生成并保存。目录标题和目标页在独立两栏显示。底部主按钮随步骤变化；搜索与折叠只影响显示，生成始终使用完整目录。目录更多菜单可展开、折叠、定位或试算整体/分段页码；试算后需明确应用，再核对实际页面，原JSON不会改动。页面支持双指缩放、双击、拖动与全屏；拖动分隔条调整两栏比例。顶部“外观”可调整主题、字号与间距，Ctrl+F可定位搜索。\n\n浏览文件默认使用应用内列表，右上角固定“取消选择”，不选文件也能返回；空目录和加载中均可取消。列表只浏览已授权位置，返回上级不会访问授权外的目录。在“已授权的位置”可左滑显示详情和红色“移除授权”，也可用位置菜单或长按进入选择，支持全选和批量移除；确认前会列出完整清单。此操作仅解除本工具的访问授权，不删除文件夹、PDF或笔记；以后可重新授权。子目录仍用于单文件选择。首次授权或“更多文件来源”仍使用系统界面；可用系统返回取消；若无法返回，回到系统主屏幕后点击本工具图标，可回到原界面并取消未完成的系统选择。顶部也保留“取消系统选择”入口。路径输入和读取也可在顶部取消，原选择及核对状态保留。\n\n第3节的“处理选项”可切换同名替换/另存、享做目录保留添加/全部替换以及成功后删除JSON。“更多操作与恢复”保留单独同步、保存已生成PDF、导出备份和恢复消失PDF；未完成任务的恢复入口直接显示。\n\n同名替换需要原文件夹的读写授权：先在该文件夹写好并核验新PDF，再将原件改名为备份，最后把新PDF改为原名。程序不截断或自动删除原PDF。文件来源不支持这些操作时，请另存。\n\n同步享做目录默认勾选，仅适配已识别的共享存储资源文件。请先保存笔记，并到系统设置强行停止享做，不要清除数据。默认保留已有享做目录并添加新目录，也可选择用新目录替换全部已有目录，包括手动目录；保留并添加模式保留原目录备份；全部替换模式核验成功后自动删除本次旧目录及内部目录恢复副本，不能再用它们恢复，失败时保留恢复材料。两种模式均保留PDF备份、原笔迹及其他配置。换输入文件或重开界面时恢复默认保留模式；未知结构、页面映射或文件变化时停止。PDF已含本次JSON的相同书签时，可在“更多操作与恢复”只同步目录，不必再生成PDF。无需无障碍服务。PDF处理离线完成；“版本与更新”默认每天检查一次本项目GitHub正式版，可关闭自动检查。确认下载并校验后可安装更新，安装仍需系统确认，应用数据保留。\n\n核对新PDF、享做目录、跳转和原笔迹正常后，保存并强行停止享做，可用一个“清理旧文件与备份”按钮。清单列出本次成功记录关联的外部旧PDF、旧目录及应用内恢复备份，确认后统一清理。清理后无法再靠这些备份恢复。保留当前PDF、活动catalog/temp、笔迹和其他配置；原始JSON只按独立勾选处理，不纳入统一清理。不会扫描旧版失去关联的备份、其他任务或未知文件。文件变化时停止；中断可按原清单重试。\n\n只有PDF及所选享做同步均成功后才可选删除JSON。中断保留未删除备份与进度；第3节目录恢复只恢复同步前目录，不改PDF和笔迹。清理前可导出备份；不要卸载程序或清除数据。\n\n加密或含签名字段的PDF会拒绝处理。桌面OCR、批量功能尚未移植。\n\n版本 "+getString(R.string.app_version)+" · GNU AGPL v3\nPDFBox Android / Gson: Apache 2.0\nBouncy Castle: MIT").setPositiveButton("知道了",null).show());
-        button(root,"许可与开源说明",this::showLicenses);
+        utilityPanel=column();utilityPanel.setVisibility(View.GONE);root.addView(utilityPanel);
+        utilityPanel.addView(text(getString(R.string.update_panel,getString(R.string.app_version)),17));
+        updates.attach(utilityPanel);
+        button(utilityPanel,"收起版本与更新",()->utilityPanel.setVisibility(View.GONE));
+        helpAction=()->dialogBuilder().setTitle("使用说明").setMessage(
+            "选择PDF与JSON，或粘贴共享存储路径 → 读取并预览 → 滑动目录、点击标题或页码核对目标页 → 生成并保存。目录标题和目标页在独立两栏显示。底部主按钮随步骤变化；搜索与折叠只影响显示，生成始终使用完整目录。目录更多菜单可展开、折叠、定位或试算整体/分段页码；试算后需明确应用，再核对实际页面，原JSON不会改动。页面支持双指缩放、双击、拖动与全屏；拖动分隔条调整两栏比例。顶部“更多 → 外观”可调整主题、字号与间距，Ctrl+F可定位搜索。\n\n浏览文件默认使用应用内列表，右上角固定“取消选择”，不选文件也能返回；空目录和加载中均可取消。列表只浏览已授权位置，返回上级不会访问授权外的目录。在“已授权的位置”可左滑显示详情和红色“移除授权”，也可用位置菜单或长按进入选择，支持全选和批量移除；确认前会列出完整清单。此操作仅解除本工具的访问授权，不删除文件夹、PDF或笔记；以后可重新授权。子目录仍用于单文件选择。首次授权或“更多文件来源”仍使用系统界面；可用系统返回取消；若无法返回，回到系统主屏幕后点击本工具图标，可回到原界面并取消未完成的系统选择。顶部也保留“取消系统选择”入口。路径输入和读取也可在顶部取消，原选择及核对状态保留。\n\n第3节的“处理选项”可切换同名替换/另存、享做目录保留添加/全部替换以及成功后删除JSON。“更多操作与恢复”保留单独同步、保存已生成PDF、导出备份和恢复消失PDF；未完成任务的恢复入口直接显示。\n\n同名替换需要原文件夹的读写授权：先在该文件夹写好并核验新PDF，再将原件改名为备份，最后把新PDF改为原名。程序不截断或自动删除原PDF。文件来源不支持这些操作时，请另存。\n\n同步享做目录默认勾选，仅适配已识别的共享存储资源文件。请先保存笔记，并到系统设置强行停止享做，不要清除数据。默认保留已有享做目录并添加新目录，也可选择用新目录替换全部已有目录，包括手动目录；保留并添加模式保留原目录备份；全部替换模式核验成功后自动删除本次旧目录及内部目录恢复副本，不能再用它们恢复，失败时保留恢复材料。两种模式均保留PDF备份、原笔迹及其他配置。换输入文件或重开界面时恢复默认保留模式；未知结构、页面映射或文件变化时停止。PDF已含本次JSON的相同书签时，可在“更多操作与恢复”只同步目录，不必再生成PDF。无需无障碍服务。PDF处理离线完成；“版本与更新”默认每天检查一次本项目GitHub正式版，可关闭自动检查。确认下载并校验后可安装更新，安装仍需系统确认，应用数据保留。\n\n核对新PDF、享做目录、跳转和原笔迹正常后，保存并强行停止享做，可用一个“清理旧文件与备份”按钮。清单列出本次成功记录关联的外部旧PDF、旧目录及应用内恢复备份，确认后统一清理。清理后无法再靠这些备份恢复。保留当前PDF、活动catalog/temp、笔迹和其他配置；原始JSON只按独立勾选处理，不纳入统一清理。不会扫描旧版失去关联的备份、其他任务或未知文件。文件变化时停止；中断可按原清单重试。\n\n只有PDF及所选享做同步均成功后才可选删除JSON。中断保留未删除备份与进度；第3节目录恢复只恢复同步前目录，不改PDF和笔迹。清理前可导出备份；不要卸载程序或清除数据。\n\n加密或含签名字段的PDF会拒绝处理。桌面OCR、批量功能尚未移植。\n\n版本 "+getString(R.string.app_version)+" · GNU AGPL v3\nPDFBox Android / Gson: Apache 2.0\nBouncy Castle: MIT").setPositiveButton("知道了",null).show();
         LinearLayout footer=column();setSurface(footer,"card",16,6,16,10);
         stageLabel=text(getString(R.string.ui_stage_ready),13);stageLabel.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);footer.addView(stageLabel);
         generate=button(footer,getString(R.string.ui_primary_read),this::primaryAction);styleButton(generate,true);
@@ -390,8 +416,8 @@ public final class MainActivity extends Activity {
         clearPendingPath();closePathEditor();launchPicker(intent,request);
     }
     private String displayName(Uri uri){
-        try(Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(c!=null&&c.moveToFirst())return c.getString(0);}
-        catch(Exception ignored){}return "所选文件";
+        try(Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(c!=null&&c.moveToFirst()){String name=c.getString(0);if(name!=null&&!name.trim().isEmpty())return name;}}
+        catch(Exception ignored){}return nameHint(uri);
     }
     private boolean persist(Uri uri,Intent data){
         int flags=data.getFlags()&(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
@@ -408,7 +434,7 @@ public final class MainActivity extends Activity {
         if(updates!=null&&updates.onActivityResult(request))return;
         if(request==systemPickerRequest)systemPickerRequest=0;
         updateButtons();
-        if(result!=RESULT_OK||data==null||data.getData()==null){clearPendingPath();if(request==SAVE_PDF&&readyVerified){outcomeSet(TaskOutcome.Part.SAVE,TaskOutcome.Status.RETAINED,getString(R.string.ui_save_cancelled));outcomeSet(TaskOutcome.Part.JSON,TaskOutcome.Status.RETAINED,getString(R.string.ui_json_kept));}status.setText("已取消文件选择 / 授权，原来的选择保留。可以继续操作。");return;}
+        if(result!=RESULT_OK||data==null||data.getData()==null){clearPendingPath();if(request==SAVE_PDF&&readyVerified){outcomeSet(TaskOutcome.Part.SAVE,TaskOutcome.Status.AWAITING_USER,getString(R.string.ui_save_cancelled));outcomeSet(TaskOutcome.Part.JSON,TaskOutcome.Status.RETAINED,getString(R.string.ui_json_kept));}status.setText("已取消文件选择 / 授权，原来的选择保留。可以继续操作。");return;}
         Uri uri=data.getData();
         if(request==PICK_PDF||request==PICK_JSON){
             persist(uri,data);selectInput(request,uri);
@@ -430,7 +456,7 @@ public final class MainActivity extends Activity {
         invalidatePlan();restoreDraft=null;String name=nameHint(uri);deleteJson.setChecked(false);catalogMode.check(keepCatalog.getId());
         if(request==PICK_PDF){pdfUri=uri;pdfName=name;pdfLabel.setText(name);getPreferences(MODE_PRIVATE).edit().putString("pdf",uri.toString()).putString("pdfName",name).apply();}
         else{jsonUri=uri;jsonName=name;jsonLabel.setText(name);getPreferences(MODE_PRIVATE).edit().putString("json",uri.toString()).putString("jsonName",name).apply();}
-        status.setText("文件已选择，点击读取并预览。");updateButtons();
+        status.setText(inputGuidance());updateButtons();
     }
     private void inputPath(int request){
         setInputsExpanded(true);
@@ -450,12 +476,13 @@ public final class MainActivity extends Activity {
     }
     private void launchPicker(Intent intent,int request){
         try{systemPickerRequest=request;updateButtons();startActivityForResult(intent,request);}
-        catch(ActivityNotFoundException|SecurityException e){systemPickerRequest=0;clearPendingPath();updateButtons();status.setText("未能打开系统文件选择器；当前选择保留。");error(message(e));}
+        catch(ActivityNotFoundException|SecurityException e){systemPickerRequest=0;clearPendingPath();if(request==SAVE_PDF&&readyVerified)outcomeSet(TaskOutcome.Part.SAVE,TaskOutcome.Status.AWAITING_USER,"尚未打开保存位置，已生成PDF保留，可继续保存。");updateButtons();status.setText("未能打开系统文件选择器；当前选择保留。");error(message(e));}
     }
     private void cancelCurrentInput(){
         if(shareLoading){cancelShare();return;}
         if(readJob!=null){cancelReading();return;}
         if(systemPickerRequest!=0){int request=systemPickerRequest;systemPickerRequest=0;finishActivity(request);clearPendingPath();
+            if(request==SAVE_PDF&&readyVerified){outcomeSet(TaskOutcome.Part.SAVE,TaskOutcome.Status.AWAITING_USER,getString(R.string.ui_save_cancelled));outcomeSet(TaskOutcome.Part.JSON,TaskOutcome.Status.RETAINED,getString(R.string.ui_json_kept));}
             status.setText("已取消系统选择 / 授权，原来的选择和已生成文件保留。");updateButtons();return;}
         if(pathEditor.getVisibility()==View.VISIBLE){closePathEditor();status.setText("已取消路径输入，原来的文件选择保留。");}
     }
@@ -470,55 +497,63 @@ public final class MainActivity extends Activity {
         launchPicker(intent,PICK_FOLDER);
     }
     private void emptyTree(){if(review!=null)review.clearDocument();}
-    private void invalidateOutput(){readyVerified=false;if(readyFile!=null&&readyFile.exists())readyFile.delete();exportedUri=null;}
+    private void invalidateOutput(){catalogRetry=null;readyVerified=false;if(readyFile!=null&&readyFile.exists())readyFile.delete();exportedUri=null;exportedName="";}
     private void invalidatePlan(){scheduleDraft(true);previewGeneration++;parsed=null;info=null;diagnostics=null;draftCompleted=false;invalidateOutput();confirmed.setChecked(false);clearImage();emptyTree();outcome.begin("");renderOutcome();summary.setText("文件已更改，需要重新预览。");}
     private void showInspectionMenu(){
         if(diagnostics==null&&parsed==null)return;
         showWorkflow(dialogBuilder().setTitle("检查与目录变化").setItems(new String[]{"导入检查与问题","PDF 书签变化","享做目录变化"},(d,which)->{
             if(which==0)showTextDetails("导入检查",diagnostics==null?"请先重新读取文件。":diagnostics.describe());
-            else if(which==1){if(parsed==null||info==null)error("请先修正目录问题并重新读取。");else showTextDetails("PDF 书签变化",DirectoryDiff.compare(info.existingRows,currentRows()).describe()+"\n\n"+(info.existingCount>0&&!replace.isChecked()?"当前未允许替换旧PDF书签，实际不会生成替换。":"以上仅预览；生成时仍会核验原文件及完整目录。"));}
+            else if(which==1)showPdfChanges();
             else previewEnjoyChanges();
         }).create());
     }
     private void previewEnjoyChanges(){
-        if(parsed==null||info==null){error("请先修正目录问题并重新读取。");return;}
+        if(parsed==null||info==null||sourceNeedsReload){error("请先重新读取当前文件，再核对享做目录变化。");return;}
         if(!EnjoyDirectorySync.recognizes(pdfUri)){showTextDetails("享做目录变化","当前文件不是已识别的享做笔记资源PDF。本工具不会猜测其笔记目录；普通PDF可继续处理内部书签。");return;}
         if(getPreferences(MODE_PRIVATE).contains("pendingPdf")||enjoy.hasPending()||hasCleanupTask()){error("请先处理已有恢复或清理记录。");return;}
         Uri selected=pdfUri;String expected=pdfHash;int count=info.pageCount;List<TocParser.Row> rows=new ArrayList<>(currentRows());boolean replaceAll=replaceCatalog.isChecked();
         setBusy(true,"正在只读核对享做目录变化…");worker.execute(()->{try{
             EnjoyDirectorySync.Prepared prepared=enjoy.prepare(selected,count,rows,expected,replaceAll);
-            String detail=(replaceAll?"模式：用新目录替换全部已有目录\n":"模式：保留已有目录并添加\n")+prepared.describePreview()+"\n\n仅预览，不写入或清理。正式同步前请保存并强行停止享做；文件变化时会重新核验。";
-            onUi(()->{setBusy(false,"享做目录变化已核对，此操作未修改文件。");showTextDetails("享做目录变化",detail);});
+            CatalogDiff.Summary diff=prepared.previewChanges();
+            onUi(()->{setBusy(false,"享做目录变化已核对，此操作未修改文件。");showChangeList("享做目录变化",(replaceAll?"替换全部目录 · ":"保留并添加 · ")+diff.counts(),diff.details,index->{
+                DirectoryDiff.Change change=diff.changes.get(index);int page=diff.targetPages.get(index);
+                if(change.after!=null&&page>0){int source=uniqueSourceRow(rows,change.after,change.afterPath,page);if(source>=0){revealDifference(rows,source);return;}}
+                if(page>0&&page<=count){focusSection(reviewCard);renderPage(page,change.after!=null?change.after.title:change.before.title);status.setText(R.string.workflow_change_previewed);}
+                else showTextDetails("目录变化详情",diff.details.get(index)+"\n\n原笔记页面无法可靠映射到当前PDF，不猜测跳转页。");
+            });});
         }catch(Exception e){onUi(()->{setBusy(false,"享做目录变化尚未核实；当前文件未改动。");showTextDetails("尚不能核对享做目录",message(e)+"\n\n请核对所选PDF及原文件夹授权。未知结构或映射不会被当成空目录。");});}});
     }
     private void refreshWorkflowSummary(){
         if(filePair!=null){filePair.setText(parsed==null?"分别选择PDF和目录JSON；也可从文件应用分享导入。":getString(R.string.workflow_file_pair,pdfName,jsonName));}
         if(changeSummary!=null){
-            if(parsed!=null&&info!=null){DirectoryDiff.Summary diff=DirectoryDiff.compare(info.existingRows,currentRows());changeSummary.setText(getString(R.string.workflow_pdf_changes,diff.counts(),diagnostics!=null&&!diagnostics.issues.isEmpty()?getString(R.string.workflow_check_hint):""));}
-            else changeSummary.setText(diagnostics!=null?"导入检查发现问题，点击查看详情":"读取后可查看导入检查与目录变化");
+            if(parsed!=null&&info!=null){DirectoryDiff.Summary diff=DirectoryDiff.compare(info.existingRows,currentRows());int issues=diagnostics==null?0:diagnostics.issues.size();changeSummary.setText(issues>0?getString(R.string.workflow_check_hint,issues):getString(R.string.workflow_pdf_changes,diff.counts(),""));changeSummary.setOnClickListener(issues>0?v->showTextDetails("导入检查",diagnostics.describe()):null);changeSummary.setClickable(issues>0);}
+            else {changeSummary.setText(diagnostics!=null?"导入检查发现问题，点击查看详情":"读取后可查看导入检查与目录变化");changeSummary.setOnClickListener(diagnostics!=null?v->showTextDetails("导入检查",diagnostics.describe()):null);changeSummary.setClickable(diagnostics!=null);}
         }
         if(inspectDirectory!=null)inspectDirectory.setEnabled(!busy&&!shareLoading&&!FilePickerDialog.isGrantChangeRunning()&&(diagnostics!=null||parsed!=null));
-        int active=exportedUri!=null?2:parsed!=null?1:0;
+        int active=exportedUri!=null||getPreferences(MODE_PRIVATE).contains("pendingPdf")||enjoy.hasPending()||hasCleanupTask()?2:parsed!=null?1:0;
         for(int i=0;i<steps.length;i++)if(steps[i]!=null){steps[i].setBackground(background(i==active?appearance.selectedRow:appearance.surfaceVariant,10));steps[i].setTextColor(i==active?appearance.accent:appearance.secondaryText);steps[i].setTypeface(null,i==active?Typeface.BOLD:Typeface.NORMAL);}
         updateDraftNotice();
     }
     private void updateButtons(){
         boolean locked=busy||shareLoading||FilePickerDialog.isGrantChangeRunning();
         for(Button b:buttons)b.setEnabled(!locked);
+        for(Button b:resultActions)b.setEnabled(!locked);
         boolean pdfPending=getPreferences(MODE_PRIVATE).contains("pendingPdf"),catalogPending=enjoy.hasPending();
         boolean cleanupPending=hasCleanupTask(),pending=pdfPending||catalogPending||cleanupPending;
+        if(reviewCard!=null)reviewCard.setVisibility(parsed!=null||diagnostics!=null?View.VISIBLE:View.GONE);
+        if(outputCard!=null)outputCard.setVisibility(parsed!=null||readyVerified||exportedUri!=null||pending||outcome.overall()!=TaskOutcome.Overall.EMPTY?View.VISIBLE:View.GONE);
         if(generate!=null){
             boolean canOpen=exportedUri!=null&&!confirmed.isChecked();
-            generate.setEnabled(!locked&&!pending&&(canOpen||(pdfUri!=null&&jsonUri!=null)));
+            generate.setEnabled(!locked&&(pending||canOpen||(pdfUri!=null&&jsonUri!=null)));
             generate.setText(busy?getString(R.string.ui_primary_busy):pending?getString(R.string.ui_primary_recovery)
-                :canOpen?getString(R.string.ui_primary_open):sourceNeedsReload?getString(R.string.workflow_read_again):parsed==null?getString(R.string.ui_primary_read)
+                :canOpen?getString(R.string.ui_primary_open):onlySyncSuggested()&&confirmed.isChecked()?"仅同步享做目录":sourceNeedsReload?getString(R.string.workflow_read_again):parsed==null?getString(R.string.ui_primary_read)
                 :!confirmed.isChecked()?getString(R.string.ui_primary_review)
                 :readyVerified?getString(R.string.ui_primary_save):getString(overwrite.isChecked()?R.string.ui_primary_replace:R.string.ui_primary_copy));
         }
         if(review!=null)review.setBusy(locked);
         if(stageLabel!=null&&!locked)stageLabel.setText(getString(pending?R.string.ui_stage_recovery:exportedUri!=null&&!confirmed.isChecked()?R.string.ui_stage_saved:parsed==null?R.string.ui_stage_ready:R.string.ui_stage_review));
         if(export!=null){export.setEnabled(!locked&&!pending&&readyVerified);export.setText(overwrite!=null&&overwrite.isChecked()?"重试保存 / 替换已生成的 PDF":"另存已生成的 PDF…");}
-        if(open!=null){open.setEnabled(!locked&&exportedUri!=null);open.setVisibility(exportedUri!=null?View.VISIBLE:View.GONE);}
+        if(open!=null){open.setEnabled(!locked&&exportedUri!=null);open.setVisibility(View.GONE);}
         if(cleanup!=null){BackupRecord record=backupRecord(getPreferences(MODE_PRIVATE).getString("lastReplacement",null));boolean available=cleanupPending||(record!=null&&sameDocument(pdfUri,Uri.parse(record.outputUri)))||enjoy.recordFor(pdfUri)!=null;
             cleanup.setVisibility(available?View.VISIBLE:View.GONE);cleanup.setEnabled(!locked&&!pdfPending&&!catalogPending&&available);cleanup.setText(cleanupPending?"继续清理旧文件与备份":"清理旧文件与备份");}
         if(confirmed!=null)confirmed.setEnabled(!locked&&parsed!=null&&!sourceNeedsReload);
@@ -541,9 +576,11 @@ public final class MainActivity extends Activity {
         if(cancelRead!=null){boolean available=shareLoading||readJob!=null||systemPickerRequest!=0||(pathEditor!=null&&pathEditor.getVisibility()==View.VISIBLE);
             cancelRead.setVisibility(available?View.VISIBLE:View.GONE);cancelRead.setEnabled(available);
             cancelRead.setText(shareLoading?"取消分享导入":readJob!=null?"取消读取 / 返回":systemPickerRequest!=0?"取消系统选择":"取消路径 / 返回");}
+        updateContextOptions();
+        if(resultFile!=null){resultFile.setVisibility(exportedUri!=null?View.VISIBLE:View.GONE);if(exportedUri!=null){String name=exportedName.isEmpty()?nameHint(exportedUri):exportedName,location=inputLabel(name,exportedUri);resultFile.setText(getString(R.string.workflow_saved_location,location.equals(name)?name+"\n"+exportedUri:location));}}
         if(outputSettings!=null&&overwrite!=null&&syncEnjoy!=null&&replaceCatalog!=null&&deleteJson!=null){
             String settings=overwrite.isChecked()?"原路径、原名称替换":"另存带目录副本";
-            settings+=overwrite.isChecked()&&syncEnjoy.isChecked()?(replaceCatalog.isChecked()?" · 享做目录全部替换":" · 享做目录保留并添加"):" · 不同步享做目录";
+            settings+=overwrite.isChecked()&&syncEnjoy.isChecked()&&EnjoyDirectorySync.recognizes(pdfUri)?(replaceCatalog.isChecked()?" · 享做目录全部替换":" · 享做目录保留并添加"):" · 不同步享做目录";
             settings+=deleteJson.isChecked()?" · 成功后删除JSON":" · 保留JSON";
             String target=pdfUri==null?"尚未选择目标PDF":pdfName;
             outputSettings.setText(getString(R.string.workflow_output_summary,parsed!=null?getString(R.string.workflow_output_count,target,currentRows().size()):target,settings));}
@@ -558,7 +595,7 @@ public final class MainActivity extends Activity {
     private void onUi(Runnable action){runOnUiThread(()->{if(!isFinishing()&&!isDestroyed())action.run();});}
     private void loadPreview(){
         if(busy||shareLoading||FilePickerDialog.isGrantChangeRunning())return;
-        if(pdfUri==null||jsonUri==null){error("请先选择PDF和JSON文件。");return;}
+        if(pdfUri==null||jsonUri==null){status.setText(inputGuidance());error(inputGuidance());return;}
         closePathEditor();
         invalidatePlan();ReadJob job=new ReadJob();readJob=job;
         File session=new File(getCacheDir(),"read-"+UUID.randomUUID());session.mkdirs();File localSource=new File(session,"source.pdf"),localReady=new File(session,"ready.pdf");
@@ -577,12 +614,12 @@ public final class MainActivity extends Activity {
                 onUi(()->{if(readJob!=job||job.cancelled)return;readJob=null;sourceFile=localSource;readyFile=localReady;info=readInfo;parsed=readPlan;pdfHash=sourceHash;jsonHash=tocHash;
                     diagnostics=readDiagnostics;draftCompleted=false;sourceNeedsReload=false;pdfName=pName;jsonName=jName;pdfLabel.setText(pName);jsonLabel.setText(jName);getPreferences(MODE_PRIVATE).edit().putString("pdfName",pName).putString("jsonName",jName).apply();review.setDocument(parsed,info.pageCount);
                     summary.setText(String.format(Locale.CHINA,"PDF共 %d 页 · 导入 %d 条目录 · 已有 %d 条书签",info.pageCount,currentRows().size(),info.existingCount));
-                    setBusy(false,info.existingCount>0?"PDF已有目录。默认跳过；需要更新时勾选替换，并核对新目录。":"预览完成。点击目录核对目标页，再确认生成。");restoreReviewIfRequested();updateButtons();scheduleDraft(false);setInputsExpanded(false);focusSection(reviewCard);});
+                    setBusy(false,info.existingCount>0?"PDF已有书签。核对后选择保留或替换；相同目录可仅同步享做。":"预览完成。点击目录核对目标页，再确认生成。");restoreReviewIfRequested();updateButtons();scheduleDraft(false);setInputsExpanded(false);focusSection(reviewCard);});
             }catch(Exception e){onUi(()->{if(readJob!=job||job.cancelled)return;readJob=null;setBusy(false,"读取失败，原文件未改动。");error(message(e));});}
         });
     }
     private String displayName(Uri uri,ReadJob job)throws IOException {
-        job.check();try(Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null,job.signal)){job.check();if(c!=null&&c.moveToFirst())return c.getString(0);}return nameHint(uri);
+        job.check();try(Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null,job.signal)){job.check();if(c!=null&&c.moveToFirst()){String name=c.getString(0);if(name!=null&&!name.trim().isEmpty())return name;}}return nameHint(uri);
     }
     private void cancelReading(){
         ReadJob job=readJob;if(job==null)return;job.cancelled=true;readJob=null;if(job.future!=null)job.future.cancel(true);
@@ -609,6 +646,7 @@ public final class MainActivity extends Activity {
     private void clearImage(){if(review!=null)review.clearBitmap();if(shown!=null){shown.recycle();shown=null;}}
     private void confirmWrite(){
         if(parsed==null||!confirmed.isChecked())return;
+        if(sourceNeedsReload){loadPreview();return;}
         if(info.existingCount>0&&!replace.isChecked()){error("PDF已有目录，默认跳过。需要更新请勾选替换，并重新核对预览。");return;}
         String action=info.existingCount>0?"将替换PDF中的整棵旧书签目录。":"将在PDF中添加书签目录。";
         String destination=overwrite.isChecked()?"生成并校验后，直接覆盖原PDF："+pdfName+"。路径和名称不变，先保存原件备份。请先关闭享做中正在使用的该笔记。":"原PDF保留；生成后选择新PDF的保存位置。";
@@ -617,17 +655,27 @@ public final class MainActivity extends Activity {
             .setNegativeButton("取消",null).setPositiveButton("生成",(d,w)->generateOutput()).show();
     }
     private void generateOutput(){
-        List<TocParser.Row> rows=currentRows();boolean replaceOld=replace.isChecked(),inPlace=overwrite.isChecked(),deleteAfter=deleteJson.isChecked();Uri p=pdfUri,j=jsonUri;
-        previewGeneration++;invalidateOutput();beginOutcome(true,inPlace&&syncEnjoy.isChecked()&&EnjoyDirectorySync.recognizes(p),deleteAfter,inPlace);setBusy(true,"正在生成并校验目录，请保持应用在前台…");setStage(R.string.ui_stage_generate);
+        List<TocParser.Row> rows=new ArrayList<>(currentRows());boolean replaceOld=replace.isChecked(),inPlace=overwrite.isChecked(),deleteAfter=deleteJson.isChecked();Uri p=pdfUri,j=jsonUri;
+        boolean sync=inPlace&&syncEnjoy.isChecked()&&EnjoyDirectorySync.recognizes(p),replaceExisting=replaceCatalog.isChecked();
+        String expectedPdf=pdfHash,expectedJson=jsonHash;int pages=info.pageCount;
+        previewGeneration++;invalidateOutput();beginOutcome(true,sync,deleteAfter,inPlace);outcome.set(TaskOutcome.Part.PDF,TaskOutcome.Status.WAITING,"先检查保存条件");renderOutcome();setBusy(true,"正在只读检查保存条件，尚未生成或改动原文件…");setStage(R.string.workflow_stage_preflight);
         worker.execute(()->{
+            boolean writing=false;
             try{
-                if(!pdfHash.equals(hashUri(p))||!jsonHash.equals(digest(readSmall(j))))throw new IOException("源文件在预览后发生变化，请重新读取预览。");
+                if(getPreferences(MODE_PRIVATE).contains("pendingPdf")||enjoy.hasPending()||hasCleanupTask())throw new IOException("请先处理未完成任务，再生成新PDF。");
+                if(!expectedPdf.equals(hashUri(p))||!expectedJson.equals(digest(readSmall(j))))throw new IOException("源文件在预览后发生变化，请重新读取预览。");
+                // Metadata and snapshots only: never create/rename a file to probe provider support.
+                if(inPlace)StagedDocuments.forDocument(this,p);
+                if(sync)enjoy.prepare(p,pages,rows,expectedPdf,replaceExisting);
+                writing=true;outcomeSet(TaskOutcome.Part.PDF,TaskOutcome.Status.RUNNING,"保存条件检查通过，正在生成");setStage(R.string.ui_stage_generate);
                 PdfBookmarks.write(sourceFile,readyFile,rows,replaceOld);
                 onUi(()->{readyVerified=true;outcome.set(TaskOutcome.Part.PDF,TaskOutcome.Status.SUCCESS,"完整目录已写入，新PDF已重读校验。");renderOutcome();setBusy(false,"生成并校验成功。可以保存PDF。");if(inPlace)replaceOriginalOutput(deleteAfter);else saveOutput();});
-            }catch(Exception e){if(readyFile.exists())readyFile.delete();outcomeSet(TaskOutcome.Part.PDF,TaskOutcome.Status.FAILED,message(e));outcomeSet(TaskOutcome.Part.SAVE,TaskOutcome.Status.SKIPPED,getString(R.string.ui_not_run));outcomeSet(TaskOutcome.Part.CATALOG,TaskOutcome.Status.SKIPPED,getString(R.string.ui_not_run));outcomeSet(TaskOutcome.Part.JSON,TaskOutcome.Status.RETAINED,getString(R.string.ui_json_kept));onUi(()->{setBusy(false,"生成失败，原文件未改动。");confirmed.setChecked(false);error(message(e));});}
+            }catch(Exception e){if(readyFile.exists())readyFile.delete();boolean generated=writing;outcomeSet(TaskOutcome.Part.PDF,generated?TaskOutcome.Status.FAILED:TaskOutcome.Status.SKIPPED,generated?message(e):"保存条件未通过，尚未生成PDF");outcomeSet(TaskOutcome.Part.SAVE,generated?TaskOutcome.Status.SKIPPED:TaskOutcome.Status.FAILED,generated?getString(R.string.ui_not_run):message(e));outcomeSet(TaskOutcome.Part.CATALOG,TaskOutcome.Status.SKIPPED,getString(R.string.ui_not_run));outcomeSet(TaskOutcome.Part.JSON,TaskOutcome.Status.RETAINED,getString(R.string.ui_json_kept));onUi(()->{setBusy(false,generated?"生成失败，原文件未改动。":"保存条件尚未满足，原文件未改动。请处理下方具体原因。");confirmed.setChecked(false);focusResult();AlertDialog.Builder alert=dialogBuilder().setTitle(generated?"生成未完成":"保存条件检查未通过").setMessage(message(e)).setNegativeButton("返回",null);if(e instanceof PathDocuments.FolderAuthorizationRequiredException||e instanceof SecurityException)alert.setPositiveButton("授权原文件夹",(d,w)->authorizeFolder(p.toString()));alert.show();});}
         });
     }
     private void saveOutput(){
+        if(!readyVerified||readyFile==null||!readyFile.isFile()){error("请先生成并校验PDF，再选择保存方式。");return;}
+        outcomeSet(TaskOutcome.Part.SAVE,TaskOutcome.Status.AWAITING_USER,"PDF已生成，等待选择位置或确认保存。");
         if(overwrite.isChecked()){
             dialogBuilder().setTitle("替换原PDF").setMessage("将覆盖 "+pdfName+"，原路径和名称不变，并保留原件备份。请先关闭享做中的该笔记。"+syncNotice()+(deleteJson.isChecked()?"\n成功后删除JSON："+jsonName:"\nJSON保留。"))
                 .setNegativeButton("取消",null).setPositiveButton("替换",(d,w)->replaceOriginalOutput(deleteJson.isChecked())).show();return;
@@ -690,10 +738,11 @@ public final class MainActivity extends Activity {
                 if(!getPreferences(MODE_PRIVATE).edit().putString("pdf",finalUri.toString()).putString("pdfName",name).putString("lastReplacement",cleanupRecord).commit())throw new IOException("最终PDF已核验，但新文件标识未保存；恢复记录保留。");
                 clearRecovery();
                 outcomeSet(TaskOutcome.Part.SAVE,TaskOutcome.Status.SUCCESS,"已在原路径以原名称替换，内容与最终名称均已重新核验："+name);
-                onUi(()->{pdfUri=finalUri;pdfLabel.setText(inputLabel(name,finalUri));});
+                CatalogRetry retry=catalog==null?null:new CatalogRetry(finalUri,outputHash,jsonUri,jsonHash,pageCount,rows,replaceExisting);
+                onUi(()->{pdfUri=finalUri;sourceNeedsReload=true;catalogRetry=retry;pdfLabel.setText(inputLabel(name,finalUri));if(retry!=null){draftCompleted=false;scheduleDraft(true);}});
                 String success="PDF已在原路径同名替换并核验："+name+"。两份原PDF备份保留。";
                 if(catalog!=null){
-                    try{setStage(R.string.ui_stage_catalog);outcomeSet(TaskOutcome.Part.CATALOG,TaskOutcome.Status.RUNNING,"");String synced=applyCatalog(catalog,outputHash);success+="\n"+synced;}
+                    try{setStage(R.string.ui_stage_catalog);outcomeSet(TaskOutcome.Part.CATALOG,TaskOutcome.Status.RUNNING,"");String synced=applyCatalog(catalog,outputHash);success+="\n"+synced;onUi(()->catalogRetry=null);}
                     catch(Exception e){finishSave(finalUri,success+"\n"+catalogFailureNotice()+"\n"+message(e),false);return;}
                 }
                 finishSave(finalUri,success+"\n请重新打开享做核对目录、跳转与原笔迹。",deleteAfter);
@@ -729,7 +778,7 @@ public final class MainActivity extends Activity {
                     if(getPreferences(MODE_PRIVATE).contains("pendingPdf")||enjoy.hasPending()||hasCleanupTask())throw new IOException("有待恢复记录，请先恢复。");
                     if(!tocHash.equals(digest(readSmall(toc))))throw new IOException("JSON在预览后变化，请重新读取。");
                     EnjoyDirectorySync.Prepared plan=enjoy.prepare(source,count,rows,expected,replaceExisting);String result=applyCatalog(plan,expected);
-                    onUi(()->{exportedUri=source;confirmed.setChecked(false);setBusy(false,result+"\nPDF与JSON未改动。请重新打开享做核对目录、跳转与原笔迹。");completeDraft();focusResult();});
+                    onUi(()->{exportedUri=source;exportedName=pdfName;confirmed.setChecked(false);setBusy(false,result+"\nPDF与JSON未改动。请重新打开享做核对目录、跳转与原笔迹。");completeDraft();focusResult();});
                 }catch(Exception e){onUi(()->{if(outcome.entries().stream().anyMatch(entry->entry.part==TaskOutcome.Part.CATALOG&&entry.status==TaskOutcome.Status.RUNNING))outcome.set(TaskOutcome.Part.CATALOG,TaskOutcome.Status.FAILED,catalogFailureNotice()+"\n"+message(e));renderOutcome();confirmed.setChecked(false);setBusy(false,catalogFailureNotice());error(message(e));});}}});
             }).show();
     }
@@ -904,14 +953,14 @@ public final class MainActivity extends Activity {
         worker.execute(()->{synchronized(replacementLock){try{
             CleanupPlan candidate=cleanupPlan(raw),plan=resume?candidate:eligibleCleanupPlan(candidate);String shownRaw=resume?raw:new Gson().toJson(plan);
             verifyCleanupPlan(plan,shownRaw,resume);List<BackupCleanup.Item> items=cleanupItems(plan,resume);BackupCleanup.verifyAll(items,resume);verifyCleanupPlan(plan,shownRaw,resume);
-            StringBuilder list=new StringBuilder("请先确认新PDF、享做目录、跳转及原笔迹正常，再保存并强行停止享做。\n\n任务PDF（保留）：\n"+cleanupLocation(nameHint(Uri.parse(plan.pdfUri)),plan.pdfUri)+"\n\n计划删除的文件（仅以下关联旧件）：\n");
+            StringBuilder list=new StringBuilder("请先确认新PDF、目录、跳转与笔迹正常，并保存、停止享做。\n\n将删除 · "+items.size()+" 组关联旧件及其应用内恢复副本\n");
             for(BackupCleanup.Item item:items)list.append("\n• ").append(cleanupLocation(item.backup.name,item.backup.uri)).append("\n• ").append(item.privateBackup.getAbsolutePath()).append("\n");
-            list.append("\n同时删除应用内恢复备份，之后不能用这些备份恢复。当前PDF、活动目录/temp、笔迹、其他配置及原始JSON不在清单中。清理前可取消并在“更多操作与恢复”导出备份。旧版失去关联的备份保留，不扫描删除。");
+            list.append("\n本次保留\n当前PDF：\n").append(cleanupLocation(nameHint(Uri.parse(plan.pdfUri)),plan.pdfUri)).append("\n活动目录/temp、笔迹、其他配置、来源JSON及无关联备份。\n\n恢复影响：上述旧件和应用内恢复备份删除后不能恢复。可取消并先导出备份；不会扫描其他文件。");
             if(plan.retainedNotice!=null&&!plan.retainedNotice.isEmpty())list.append("\n\n以下旧件未通过核验，本次保留，不删除：\n").append(plan.retainedNotice);
             if(resume)list.append("\n\n这是已确认清理的重试，部分旧件可能已删除；只继续核验和清理同一清单。");
             onUi(()->{setBusy(false,"清单已核验，等待确认；尚未继续删除。");ScrollView scroll=new ScrollView(this);TextView content=text(list.toString(),15);content.setPadding(dp(20),dp(12),dp(20),dp(12));scroll.addView(content);
                 AlertDialog.Builder dialog=dialogBuilder().setTitle("清理旧文件与备份").setView(scroll).setNegativeButton("取消",null).setPositiveButton("清理待删除清单",(d,w)->runCleanup(shownRaw,resume));
-                if(resume)dialog.setNeutralButton("保留剩余文件，结束清理",(d,w)->stopCleanup(shownRaw));dialog.show();});
+                if(resume)dialog.setNeutralButton("保留剩余文件，结束清理",(d,w)->stopCleanup(shownRaw));AlertDialog shown=dialog.show();appearance.styleDialog(shown);shown.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(appearance.error);});
         }catch(Exception e){onUi(()->cleanupFailure(e,"清理核验未通过，没有继续删除；请查看具体提示。"));}}});
     }
     private void runCleanup(String raw,boolean resume){
@@ -933,7 +982,7 @@ public final class MainActivity extends Activity {
                 throw new IOException("旧件已核验删除，但进度未保存；可按同一清单重试完成。");
             }
             outcomeSet(TaskOutcome.Part.CLEANUP,TaskOutcome.Status.SUCCESS,"已完成本次确认清单；未通过核验的旧件保留，当前PDF、享做目录及笔迹保留。");
-            onUi(()->setBusy(false,"待删除清单内的旧文件与关联恢复备份已全部清理。当前PDF、享做目录和笔迹保留；这些备份已不能用于恢复。"+(plan.retainedNotice==null||plan.retainedNotice.isEmpty()?"":"\n以下旧件未通过核验并保留：\n"+plan.retainedNotice)));
+            onUi(()->{setBusy(false,"待删除清单内的旧文件与关联恢复备份已全部清理。当前PDF、享做目录和笔迹保留；这些备份已不能用于恢复。"+(plan.retainedNotice==null||plan.retainedNotice.isEmpty()?"":"\n以下旧件未通过核验并保留：\n"+plan.retainedNotice));finishCatalogDraftAfterCleanup(plan.pdfUri);});
         }catch(Exception e){onUi(()->cleanupFailure(e,"清理尚未全部完成，已删除的旧件不会重复删除。进度与剩余文件保留，请按提示重试；当前PDF和笔迹受保护。"));}}});
     }
     private void cleanupFailure(Exception failure,String notice){
@@ -953,8 +1002,14 @@ public final class MainActivity extends Activity {
             if(saved!=null&&!prefs.edit().remove("pendingCleanup").commit()){prefs.edit().putString("pendingCleanup",saved).commit();throw new IOException("进度未成功更新，可重新结束清理。");}
             if(plan.catalogRecord!=null&&plan.catalogRecord.equals(enjoy.automaticCleanupRecord()))enjoy.stopAutomaticCleanup(plan.catalogRecord);
             outcomeSet(TaskOutcome.Part.CLEANUP,TaskOutcome.Status.RETAINED,"已结束清理；剩余文件与完整关联记录保留，已删除旧件不会恢复。");
-            onUi(()->setBusy(false,"已结束本次清理，剩余文件及完整关联记录保留；已删除的旧件不会恢复。可继续其他任务。未通过校验的旧件仍不会删除。"));
+            onUi(()->{setBusy(false,"已结束本次清理，剩余文件及完整关联记录保留；已删除的旧件不会恢复。可继续其他任务。未通过校验的旧件仍不会删除。");finishCatalogDraftAfterCleanup(plan.pdfUri);});
         }catch(Exception e){outcomeSet(TaskOutcome.Part.CLEANUP,TaskOutcome.Status.FAILED,message(e));onUi(()->{setBusy(false,"未能结束清理，进度与剩余文件保留。");error(message(e));});}}});
+    }
+    private void finishCatalogDraftAfterCleanup(String cleanedPdf){
+        if(catalogRetry!=null&&sameDocument(pdfUri,catalogRetry.pdf)&&sameDocument(catalogRetry.pdf,Uri.parse(cleanedPdf))
+                &&!enjoy.hasPending()&&!hasCleanupTask()&&outcome.entries().stream().anyMatch(entry->entry.part==TaskOutcome.Part.CATALOG&&entry.status==TaskOutcome.Status.SUCCESS)){
+            catalogRetry=null;completeDraft();
+        }
     }
     private void discardCleanupFor(Uri restored,String name)throws IOException{
         SharedPreferences prefs=getPreferences(MODE_PRIVATE);BackupRecord record=backupRecord(prefs.getString("lastReplacement",null));
@@ -977,8 +1032,8 @@ public final class MainActivity extends Activity {
                 deleted=true;getPreferences(MODE_PRIVATE).edit().remove("json").remove("jsonName").apply();note="\n所选JSON已删除。";outcomeSet(TaskOutcome.Part.JSON,TaskOutcome.Status.SUCCESS,"所选JSON已核验并删除："+jsonName);
             }catch(Exception e){note="\nPDF已保存，JSON未删除："+message(e);outcomeSet(TaskOutcome.Part.JSON,TaskOutcome.Status.FAILED,message(e));}
         }else outcomeSet(TaskOutcome.Part.JSON,TaskOutcome.Status.RETAINED,getString(R.string.ui_json_kept));
-        boolean removed=deleted;String result=success+note;
-        onUi(()->{sourceNeedsReload=sameDocument(destination,pdfUri);exportedUri=destination;confirmed.setChecked(false);if(removed){jsonUri=null;jsonName="";jsonLabel.setText("所选JSON已删除；下次任务请选择新JSON");deleteJson.setChecked(false);}setBusy(false,result);completeDraft();focusResult();});
+        boolean removed=deleted;String result=success+note;String savedName=displayName(destination);
+        onUi(()->{sourceNeedsReload=sameDocument(destination,pdfUri);exportedUri=destination;exportedName=savedName;confirmed.setChecked(false);if(removed){jsonUri=null;jsonName="";jsonLabel.setText("所选JSON已删除；下次任务请选择新JSON");deleteJson.setChecked(false);}setBusy(false,result);if(catalogRetry!=null||enjoy.hasPending()||hasCleanupTask()){draftCompleted=false;scheduleDraft(true);}else completeDraft();focusResult();});
     }
     private void clearRecovery()throws IOException{
         if(!getPreferences(MODE_PRIVATE).edit().remove("pendingPdf").remove("pendingBackup").remove("pendingOriginalHash").remove("pendingOutputHash").remove("pendingName").remove("pendingFolder").remove("pendingJournal").commit())throw new IOException("PDF核验完成，但恢复记录未成功清除；JSON保留，请重新打开程序核对。");
@@ -1169,15 +1224,99 @@ public final class MainActivity extends Activity {
             UiAppearance.save(this,theme.getSelectedItemPosition(),size.getSelectedItemPosition(),density.getSelectedItemPosition());applyCurrentAppearance();
         }).create();appearanceDialog.setOnDismissListener(d->{appearanceDialog=null;updateButtons();});appearanceDialog.show();appearance.styleDialog(appearanceDialog);
     }
+    private String inputGuidance(){
+        if(pdfUri==null&&jsonUri==null)return "选择PDF和对应的目录JSON，然后读取核对。";
+        if(pdfUri==null)return "还需选择PDF原文件。";
+        if(jsonUri==null)return "还需选择目录JSON。";
+        return "两个文件已选好，点击底部“读取并预览”。";
+    }
+    private boolean onlySyncSuggested(){
+        return parsed!=null&&info!=null&&!sourceNeedsReload&&overwrite.isChecked()&&syncEnjoy.isChecked()
+            &&EnjoyDirectorySync.recognizes(pdfUri)&&info.existingCount>0&&!replace.isChecked()&&sameRows(info.existingRows,currentRows());
+    }
+    private void updateContextOptions(){
+        if(enjoyOptions==null)return;boolean recognized=EnjoyDirectorySync.recognizes(pdfUri);
+        enjoyOptions.setVisibility(recognized?View.VISIBLE:View.GONE);
+        syncEnjoy.setVisibility(overwrite.isChecked()?View.VISIBLE:View.GONE);
+        boolean directOnly=parsed!=null&&info!=null&&!sourceNeedsReload&&sameRows(info.existingRows,currentRows());
+        boolean applicable=recognized&&((overwrite.isChecked()&&syncEnjoy.isChecked())||directOnly);
+        catalogChoices.setVisibility(applicable?View.VISIBLE:View.GONE);
+        syncHint.setText(!overwrite.isChecked()?"另存副本不自动同步享做；已有相同书签时可单独同步。":!syncEnjoy.isChecked()?"本次生成不自动同步；单独同步仍使用以下目录模式。":"同步前请保存并停止享做。未知结构会停止处理。");
+    }
+    private void showAppMenu(View anchor){
+        PopupMenu menu=new PopupMenu(appearance.dialogContext(this),anchor);
+        menu.getMenu().add("外观").setOnMenuItemClickListener(item->{showAppearance();return true;});
+        menu.getMenu().add("版本与更新").setOnMenuItemClickListener(item->{utilityPanel.setVisibility(View.VISIBLE);focusSection(utilityPanel);return true;});
+        menu.getMenu().add("使用帮助").setOnMenuItemClickListener(item->{showHelpMenu();return true;});
+        menu.getMenu().add("许可与开源说明").setOnMenuItemClickListener(item->{showLicenses();return true;});menu.show();
+    }
+    private void showHelpMenu(){
+        showWorkflow(dialogBuilder().setTitle("使用帮助").setItems(new String[]{"选择文件与授权","目录、页码与差异核对","生成、享做同步与清理","完整操作说明"},(dialog,index)->{
+            if(index==3){helpAction.run();return;}
+            String[] messages={"选择PDF和对应JSON，可浏览已授权位置或粘贴路径。取消随时返回，原选择保留。路径不等于授权；首次使用须授权所在文件夹。移除授权只撤销本工具的访问权，不删除文件。",
+                "目录和页码分别显示，点击行预览PDF实际页。搜索与折叠不改变完整生成范围。变化清单可点选定位；移除项只预览旧目标页。调整页码须先试算，再明确应用并重新核对。",
+                "PDF书签内容、PDF保存方式、享做目录处理是三个独立选择。享做同步前保存笔记并在系统设置强行停止，不要清除数据。待保存、部分成功或待恢复时按结果中的下一步继续。确认新PDF和笔迹正常后，唯一清理入口会列明本次旧件；确认删除恢复备份后不能再用它们恢复。"};
+            showTextDetails(index==0?"选择文件与授权":index==1?"目录核对":"保存与清理",messages[index]);
+        }).setNegativeButton("关闭",null).create());
+    }
+    private void focusPendingTask(){
+        focusSection(outputCard);Button target=getPreferences(MODE_PRIVATE).contains("pendingPdf")?recover:enjoy.hasPending()?recoverCatalog:cleanup;
+        if(target!=null){target.setVisibility(View.VISIBLE);target.requestFocus();target.announceForAccessibility("请核对本项未完成任务后继续，不会自动恢复或删除。");}
+        status.setText("请处理第3节中已标出的未完成任务；当前文件和恢复记录保留。");
+    }
+    private void showPdfChanges(){
+        if(parsed==null||info==null||sourceNeedsReload){error("请先重新读取当前PDF与JSON，再核对变化。");return;}
+        List<TocParser.Row> rows=new ArrayList<>(currentRows());DirectoryDiff.Summary diff=DirectoryDiff.compare(info.existingRows,rows);
+        ArrayList<String> details=new ArrayList<>();for(DirectoryDiff.Change change:diff.changes)details.add(change.describe());
+        showChangeList("PDF书签变化",diff.counts()+(!replace.isChecked()&&info.existingCount>0?"\n未允许覆盖PDF旧书签":""),details,index->{
+            DirectoryDiff.Change change=diff.changes.get(index);
+            if(change.afterIndex>=0){revealDifference(rows,change.afterIndex);return;}
+            int page=change.before.pdfPage;if(page>0&&page<=info.pageCount){focusSection(reviewCard);renderPage(page,change.before.title);status.setText("正在预览将移除书签的旧目标页；没有添加或修改条目。");}
+            else showTextDetails("书签变化详情",change.describe()+"\n\n旧目标未解析，不能可靠跳页。");
+        });
+    }
+    private void showChangeList(String title,String counts,List<String> details,java.util.function.IntConsumer locate){
+        if(details.isEmpty()){showTextDetails(title,counts+"\n\n没有需要定位的变化。此检查未改动文件。");return;}
+        LinearLayout panel=column();panel.setPadding(dp(18),dp(12),dp(18),0);panel.addView(text(counts+"\n点击变化项定位；这里只预览，不写入文件。",14));
+        ListView list=new ListView(appearance.dialogContext(this));list.setAdapter(appearance.dialogListAdapter(list.getContext(),details.toArray(new String[0])));
+        panel.addView(list,new LinearLayout.LayoutParams(-1,dp(Math.max(160,Math.min(460,getResources().getConfiguration().screenHeightDp-260)))));
+        AlertDialog dialog=dialogBuilder().setTitle(title).setView(panel).setNegativeButton("关闭",null).create();
+        list.setOnItemClickListener((parent,view,index,id)->{dialog.dismiss();locate.accept(index);});showWorkflow(dialog);
+    }
+    private void revealDifference(List<TocParser.Row> snapshot,int index){
+        if(parsed==null||sourceNeedsReload||!sameRows(snapshot,currentRows())){error("目录已变化，请重新打开变化清单。");return;}
+        if(review.revealSourceRow(index)){focusSection(reviewCard);status.setText("已定位变化条目；只调整浏览位置，生成仍使用完整目录。");}
+    }
+    private static int uniqueSourceRow(List<TocParser.Row> rows,TocParser.Row target,String targetPath,int page){
+        ArrayList<String> parents=new ArrayList<>();int found=-1;
+        for(int i=0;i<rows.size();i++){TocParser.Row row=rows.get(i);while(parents.size()>=row.level)parents.remove(parents.size()-1);parents.add(row.title);
+            if(row.level==target.level&&row.pdfPage==page&&Objects.equals(row.title,target.title)&&String.join(" › ",parents).equals(targetPath)){if(found>=0)return -1;found=i;}}
+        return found;
+    }
+    private void confirmRetryCatalog(){
+        CatalogRetry retry=catalogRetry;if(retry==null||busy)return;
+        if(getPreferences(MODE_PRIVATE).contains("pendingPdf")||enjoy.hasPending()||hasCleanupTask()){focusPendingTask();return;}
+        showWorkflow(dialogBuilder().setTitle("继续未完成的目录同步").setMessage("只处理这次已保存PDF的享做目录，不重新生成或替换PDF。\n"+catalogModeNotice(retry.replaceAll)+"\n\n请保存并强行停止享做，不要清除数据。来源JSON保留。").setNegativeButton("取消",null).setPositiveButton("已停止享做，继续同步",(d,w)->{
+            setBusy(true,"正在重新核验已保存PDF和目录来源…");outcomeSet(TaskOutcome.Part.CATALOG,TaskOutcome.Status.RUNNING,"");
+            worker.execute(()->{synchronized(replacementLock){try{
+                if(getPreferences(MODE_PRIVATE).contains("pendingPdf")||enjoy.hasPending()||hasCleanupTask())throw new IOException("请先处理未完成的恢复或清理记录。");
+                if(!retry.jsonHash.equals(digest(readSmall(retry.json))))throw new IOException("来源JSON已变化，请重新读取核对。PDF不会重新生成。");
+                EnjoyDirectorySync.Prepared prepared=enjoy.prepare(retry.pdf,retry.pages,retry.rows,retry.pdfHash,retry.replaceAll);
+                String result=applyCatalog(prepared,retry.pdfHash);
+                onUi(()->{catalogRetry=null;outcome.set(TaskOutcome.Part.JSON,TaskOutcome.Status.RETAINED,"单独续办同步保留JSON");renderOutcome();setBusy(false,result+"\nPDF未重新写入，JSON保留。请重开享做核对。");completeDraft();focusResult();});
+            }catch(Exception e){onUi(()->{if(outcome.entries().stream().anyMatch(entry->entry.part==TaskOutcome.Part.CATALOG&&entry.status==TaskOutcome.Status.RUNNING))outcome.set(TaskOutcome.Part.CATALOG,enjoy.hasPending()?TaskOutcome.Status.RECOVERY_REQUIRED:TaskOutcome.Status.FAILED,message(e));renderOutcome();setBusy(false,catalogFailureNotice()+"\n"+message(e));});}}});
+        }).create());
+    }
     private void primaryAction(){
-        if(busy||shareLoading||FilePickerDialog.isGrantChangeRunning()||getPreferences(MODE_PRIVATE).contains("pendingPdf")||enjoy.hasPending()||hasCleanupTask())return;
+        if(busy||shareLoading||FilePickerDialog.isGrantChangeRunning())return;
+        if(getPreferences(MODE_PRIVATE).contains("pendingPdf")||enjoy.hasPending()||hasCleanupTask()){focusPendingTask();return;}
         if(exportedUri!=null&&!confirmed.isChecked()){openOutput();return;}
         if(parsed==null||sourceNeedsReload){loadPreview();return;}
         if(!confirmed.isChecked()){
             int[] child=new int[2],parent=new int[2];confirmed.getLocationOnScreen(child);mainScroll.getLocationOnScreen(parent);
             mainScroll.smoothScrollBy(0,child[1]-parent[1]-mainScroll.getHeight()/2);confirmed.requestFocus();status.setText(getString(R.string.ui_review_first));return;
         }
-        if(readyVerified)saveOutput();else confirmWrite();
+        if(readyVerified)saveOutput();else if(onlySyncSuggested())confirmSyncCatalog();else confirmWrite();
     }
     private void onRowsApplied(){
         if(!sourceNeedsReload)draftCompleted=false;
@@ -1197,10 +1336,10 @@ public final class MainActivity extends Activity {
         outcome.set(TaskOutcome.Part.CLEANUP,replacing?TaskOutcome.Status.RETAINED:TaskOutcome.Status.NOT_REQUESTED,replacing?getString(R.string.ui_backups_kept):"");renderOutcome();
     }
     private int outcomeLabel(TaskOutcome.Part part){switch(part){case PDF:return R.string.ui_result_pdf;case SAVE:return R.string.ui_result_save;case CATALOG:return R.string.ui_result_catalog;case JSON:return R.string.ui_result_json;default:return R.string.ui_result_cleanup;}}
-    private int outcomeState(TaskOutcome.Status state){switch(state){case WAITING:return R.string.ui_waiting;case RUNNING:return R.string.ui_running;case SUCCESS:return R.string.ui_success;case RETAINED:return R.string.ui_retained;case SKIPPED:return R.string.ui_skipped;case FAILED:return R.string.ui_failed;default:return R.string.ui_not_requested;}}
+    private int outcomeState(TaskOutcome.Status state){switch(state){case AWAITING_USER:return R.string.workflow_waiting_user;case RECOVERY_REQUIRED:return R.string.workflow_recovery_required;case WAITING:return R.string.ui_waiting;case RUNNING:return R.string.ui_running;case SUCCESS:return R.string.ui_success;case RETAINED:return R.string.ui_retained;case SKIPPED:return R.string.ui_skipped;case FAILED:return R.string.ui_failed;default:return R.string.ui_not_requested;}}
     private void renderOutcome(){
-        if(resultRows==null||resultHeading==null)return;boolean visible=outcome.overall()!=TaskOutcome.Overall.EMPTY;resultRows.setVisibility(visible?View.VISIBLE:View.GONE);resultHeading.setVisibility(visible?View.VISIBLE:View.GONE);
-        resultRows.removeAllViews();if(!visible)return;resultHeading.setText(getString(R.string.ui_result_heading,outcome.summary()));
+        if(resultRows==null||resultHeading==null)return;boolean pending=getPreferences(MODE_PRIVATE).contains("pendingPdf")||enjoy.hasPending()||hasCleanupTask();boolean visible=outcome.overall()!=TaskOutcome.Overall.EMPTY||pending;resultRows.setVisibility(visible?View.VISIBLE:View.GONE);resultHeading.setVisibility(visible?View.VISIBLE:View.GONE);
+        resultRows.removeAllViews();resultActions.clear();if(!visible)return;resultHeading.setText(getString(R.string.ui_result_heading,pending?"有待恢复或清理事项，请先处理":outcome.summary()));
         for(TaskOutcome.Entry entry:outcome.entries())if(entry.status!=TaskOutcome.Status.NOT_REQUESTED){
             LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(0,dp(7),0,dp(7));
             line.setContentDescription(getString(R.string.ui_result_line,getString(outcomeLabel(entry.part)),getString(outcomeState(entry.status))));
@@ -1208,12 +1347,36 @@ public final class MainActivity extends Activity {
             TextView badge=text(getString(outcomeState(entry.status)),13);badge.setPadding(dp(10),dp(5),dp(10),dp(5));
             boolean failed=entry.status==TaskOutcome.Status.FAILED,success=entry.status==TaskOutcome.Status.SUCCESS;
             badge.setTextColor(failed?appearance.error:success?appearance.accent:appearance.secondaryText);badge.setBackground(background(failed?appearance.errorBg:success?appearance.selectedRow:appearance.surfaceVariant,8));line.addView(badge);resultRows.addView(line);
+            if((failed||entry.status==TaskOutcome.Status.RECOVERY_REQUIRED||entry.status==TaskOutcome.Status.AWAITING_USER)&&!entry.detail.isEmpty()){
+                TextView reason=text(entry.detail.split("\n",2)[0],13);reason.setTextColor(failed?appearance.error:appearance.secondaryText);reason.setTextIsSelectable(true);resultRows.addView(reason);
+            }
+            if(entry.status==TaskOutcome.Status.FAILED||entry.status==TaskOutcome.Status.AWAITING_USER||entry.status==TaskOutcome.Status.RECOVERY_REQUIRED){
+                if(getPreferences(MODE_PRIVATE).contains("pendingPdf")||enjoy.hasPending()||hasCleanupTask()){
+                    if(resultActions.isEmpty())resultAction("处理未完成任务",this::focusPendingTask);
+                }else if(entry.part==TaskOutcome.Part.SAVE)resultAction(readyVerified?"继续保存已生成的PDF":"检查文件与保存选项",readyVerified?this::saveOutput:this::focusOutputOptions);
+                else if(entry.part==TaskOutcome.Part.CATALOG&&catalogRetry!=null)resultAction("仅重试未完成的享做目录同步",this::confirmRetryCatalog);
+                else if(entry.part==TaskOutcome.Part.CLEANUP)resultAction("重新核验清理清单",this::confirmCleanup);
+                else if(entry.part==TaskOutcome.Part.PDF)resultAction("返回目录核对",()->focusSection(reviewCard));
+                else if(entry.part==TaskOutcome.Part.JSON)resultAction("保留JSON，结束此可选步骤",this::confirmKeepJson);
+            }
         }
+        if(pending&&resultActions.isEmpty())resultAction("处理未完成任务",this::focusPendingTask);
         Button details=new Button(this);details.setText(R.string.ui_result_details);styleButton(details,false);details.setOnClickListener(v->showResultDetails());resultRows.addView(details);
+    }
+    private void resultAction(String label,Runnable action){
+        Button button=new Button(this);button.setText(label);styleButton(button,false);button.setMinHeight(dp(48));
+        button.setEnabled(!busy&&!shareLoading&&!FilePickerDialog.isGrantChangeRunning());button.setOnClickListener(v->{if(!busy&&!shareLoading&&!FilePickerDialog.isGrantChangeRunning())action.run();});
+        resultActions.add(button);resultRows.addView(button,new LinearLayout.LayoutParams(-1,-2));
+    }
+    private void focusOutputOptions(){optionsPanel.setVisibility(View.VISIBLE);((Button)optionsPanel.getTag()).setText("处理选项 ▴");setInputsExpanded(true);focusSection(outputCard);}
+    private void confirmKeepJson(){
+        if(busy)return;
+        showWorkflow(dialogBuilder().setTitle("结束JSON删除步骤？").setMessage("不再重试本次JSON删除。已保存PDF及成功同步的目录保持，不会重新生成、保存或清理文件。来源JSON及其授权保留。")
+            .setNegativeButton("返回",null).setPositiveButton("保留JSON",(d,w)->{deleteJson.setChecked(false);outcome.set(TaskOutcome.Part.JSON,TaskOutcome.Status.RETAINED,"已选择结束本次自动删除，未继续操作来源JSON。");renderOutcome();status.setText(R.string.workflow_json_kept_end);}).create());
     }
     private void showResultDetails(){
         StringBuilder detail=new StringBuilder();for(TaskOutcome.Entry e:outcome.entries())if(e.status!=TaskOutcome.Status.NOT_REQUESTED)detail.append(getString(outcomeLabel(e.part))).append("：").append(getString(outcomeState(e.status))).append("\n").append(e.detail).append("\n\n");
-        if(exportedUri!=null)detail.append(getString(R.string.ui_result_path)).append("\n").append(inputLabel(displayName(exportedUri),exportedUri)).append("\n").append(exportedUri);
+        if(exportedUri!=null)detail.append(getString(R.string.ui_result_path)).append("\n").append(inputLabel(exportedName.isEmpty()?nameHint(exportedUri):exportedName,exportedUri)).append("\n").append(exportedUri);
         String value=detail.toString();TextView content=text(value,15);content.setTextIsSelectable(true);content.setPadding(dp(20),dp(12),dp(20),dp(12));ScrollView scroll=new ScrollView(appearance.dialogContext(this));scroll.addView(content);
         dialogBuilder().setTitle(R.string.ui_result_title).setView(scroll).setPositiveButton(R.string.ui_close,null).setNeutralButton(R.string.ui_copy_details,(d,w)->{android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);if(clipboard!=null)clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.ui_result_title),value));}).show();
     }
@@ -1229,15 +1392,16 @@ public final class MainActivity extends Activity {
         if(pathEditor.getVisibility()==View.VISIBLE){closePathEditor();status.setText("已取消路径输入，原来的文件选择保留。");return;}
         if(readJob!=null){cancelReading();return;}
         if(busy){dialogBuilder().setMessage("正在处理文件，请等待完成后退出，避免保存中断。").setPositiveButton("继续等待",null).show();return;}
-        if(parsed!=null&&!draftCompleted){scheduleDraft(true);showWorkflow(dialogBuilder().setTitle("离开核对界面？").setMessage("核对进度会保存为应用内草稿，下次可继续。原PDF和JSON不会因此改动。")
+        if(parsed!=null&&!draftCompleted&&(!sourceNeedsReload||catalogRetry!=null)){scheduleDraft(true);showWorkflow(dialogBuilder().setTitle("离开核对界面？").setMessage("核对进度会保存为应用内草稿，下次可继续。原PDF和JSON不会因此改动。")
             .setNegativeButton("继续核对",null).setPositiveButton("保存草稿并离开",(d,w)->leaveAfterDraft()).create());return;}
         super.onBackPressed();
     }
     private void leaveAfterDraft(){
+        final ReviewDraft expected;try{expected=captureReviewDraft();}catch(IllegalArgumentException e){error("核对草稿未保存："+message(e));return;}
         scheduleDraft(true);long revision=draftRevision;
         draftWriter.execute(()->{DraftStore.LoadResult saved=draftStore.load();onUi(()->{
             if(revision!=draftRevision)return;
-            if(storedDraftRevision!=revision||saved.draft==null||pdfUri==null||jsonUri==null||!saved.draft.matches(pdfUri.toString(),jsonUri.toString(),pdfHash,jsonHash)){
+            if(storedDraftRevision!=revision||saved.draft==null||!saved.draft.matches(expected.pdfUri,expected.jsonUri,expected.pdfSha256,expected.jsonSha256)){
                 error(saved.error==null?"核对草稿尚未保存，请稍后再试；当前核对界面保留。":saved.error);return;
             }
             MainActivity.super.onBackPressed();

@@ -31,6 +31,8 @@ public final class StartupSmoke extends Instrumentation {
         int appearanceChecks = 0;
         boolean recreated = false;
         String workflowResult = "NOT_RUN";
+        String workflow140Result = "NOT_RUN";
+        String reviewWorkspaceResult = "NOT_RUN";
         String windowResult = "NOT_RUN";
         String grantResult = "NOT_RUN";
         try {
@@ -62,6 +64,8 @@ public final class StartupSmoke extends Instrumentation {
             recreated = true;
             windowResult = WindowSmoke.verify(this, current);
             workflowResult = WorkflowSmoke.verify(this, current);
+            reviewWorkspaceResult = ReviewWorkspaceSmoke.verify(this, current);
+            workflow140Result = Workflow140Smoke.verify(this, current);
             grantResult = GrantPickerSmoke.verify(this, current);
         } catch (Throwable error) {
             failure = error;
@@ -85,9 +89,11 @@ public final class StartupSmoke extends Instrumentation {
         result.putInt("systemBarChecks", appearanceChecks);
         result.putBoolean("activityRecreated", recreated);
         result.putString("workflowSmoke", workflowResult);
+        result.putString("workflow140Smoke", workflow140Result);
+        result.putString("reviewWorkspaceSmoke", reviewWorkspaceResult);
         result.putString("windowSmoke", windowResult);
         result.putString("grantPickerSmoke", grantResult);
-        result.putString("scope", "Activity startup, system bars, recreation, synthetic review/draft UI and read-only grant picker gestures; no document operation or grant revocation");
+        result.putString("scope", "Activity startup, system bars, recreation, synthetic review/draft and v1.4 workflow controls, read-only grant picker gestures; no real document operation, grant revocation or update request");
         if (failure == null) {
             result.putString("stream", "\nPASS: MainActivity startup and recreation; 6 system-bar checks; appearance preferences unchanged.\n");
         } else {

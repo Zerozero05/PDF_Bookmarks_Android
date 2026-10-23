@@ -22,7 +22,7 @@
     <string name="ui_stage_cleanup">正在核验并清理列明的旧文件</string>
     <string name="ui_primary_read">读取文件并预览目录</string>
     <string name="ui_primary_busy">正在处理…</string>
-    <string name="ui_primary_recovery">请先完成恢复</string>
+    <string name="ui_primary_recovery">处理未完成任务</string>
     <string name="ui_primary_open">打开已保存的PDF</string>
     <string name="ui_primary_review">前往核对目录</string>
     <string name="ui_primary_replace">生成并替换原PDF</string>

@@ -68,6 +68,7 @@ public final class EnjoyDirectorySync {
         }
         /** Read-only comparison of the exact snapshots already validated by prepare(). */
         public String describePreview() { return CatalogDiff.compare(original, plan.json, physicalPages).describe(); }
+        public CatalogDiff.Summary previewChanges() { return CatalogDiff.compare(original, plan.json, physicalPages); }
     }
 
     private static final class Pending {
