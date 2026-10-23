@@ -1,6 +1,6 @@
 # GitHub 仓库与发布约定
 
-当前正式版为[v1.0.0](https://github.com/Zerozero05/PDF_Bookmarks_Android/releases/tag/v1.0.0)，已在用户明确确认后按原候选与原签名五附件正式发布；逐项公开下载核验通过，新版设备未测项继续保留。保持五附件命名、原升级签名与完整校验；以后发布步骤见[AUTO_UPDATE](AUTO_UPDATE.md#以后发布新版本时)。以下保留首次创建和v0.1.9发布约定的历史背景，不能当作新版本已获授权。
+当前正式版为[v1.4.0](https://github.com/Zerozero05/PDF_Bookmarks_Android/releases/tag/v1.4.0)，用户已明确确认，Release422299598为Latest；原签名五附件已公开回读，标签固定b1055a3c8a8b8906c61a0957477edd1b0d507a4d，CI通过。后续发布仍遵循具体候选确认、草稿资产核对与公开下载校验；下面首次创建／旧版约定为历史，不改变本次未测边界。
 
 用户已于2026-10-09要求新建GitHub仓库并发布，随后报告“我已验收”并授权将v0.1.9改为正式版。项目地址为 [Zerozero05/PDF_Bookmarks_Android](https://github.com/Zerozero05/PDF_Bookmarks_Android)，正式发布页为 [v0.1.9](https://github.com/Zerozero05/PDF_Bookmarks_Android/releases/tag/v0.1.9)。沿用PC项目命名，不改应用版本、签名、原5附件和历史交付；只更新正式/最新状态及使用说明。最新用户说明见[USER_GUIDE](USER_GUIDE.md)，原标签和源码ZIP保留发布时内容。
 

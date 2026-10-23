@@ -4,7 +4,7 @@
 
 ## v1.4.0 流程与界面维护
 
-本地试用候选1.4.0／code17，未公开发布。12项实现与分项验证见[完整记录](../CHANGELOG.md#v1-4-0)和[本轮验证](../VALIDATION.md#candidate-v140-2026-10-24)；下面旧版本章节保留为历史，不继承为本轮设备结果。
+当前正式版1.4.0／code17，Release422299598为Latest；标签b1055a3c8a8b8906c61a0957477edd1b0d507a4d及原签名五附件已公开实读，main同候选tree合并并通过CI。正式说明见[记录](../VALIDATION.md#formal-v140-2026-10-24)，实现与边界见[完整日志](../CHANGELOG.md#v1-4-0)；旧版本段落保留为历史。
 
 `TaskOutcome.AWAITING_USER`表示已生成而尚未保存，不能把取消保存记为完成；`RECOVERY_REQUIRED`与既有pending记录共同阻止新写入。生成前预检只读取源哈希、提供者元数据与享做准备快照，不试写、不改名、不探测删除；正式事务仍需重新验证，预检不能保证提供者之后一定允许操作。
 
@@ -12,7 +12,7 @@
 
 `DirectoryDiff`保留原树的before／after索引；`CatalogDiff.targetPages`按已核实页映射供只读跳转。未知页、手动笔记页或歧义重复项不猜测位置；筛选与定位不改变完整输出树。已保存名称在后台读取一次并缓存，结果刷新不查询提供者；名称为空时回退URI提示。
 
-新增`Workflow140Smoke`和`ReviewWorkspaceSmoke`接入原Startup链；测试采用合成状态，保留旧断言，不能为通过而执行真实撤权、笔记或PDF写入。最终离线构建、单测与lint已完成，原生组件仅编译，本轮ADB无设备，实际启动／触摸／窗口及事务验收仍待[D69–D80](DEVICE_ACCEPTANCE.md#v140-流程与界面验收)。
+新增`Workflow140Smoke`与`ReviewWorkspaceSmoke`接入原Startup链；最终native05已在API31执行，含实际Main私有缓存file://合成预检→生成→取消→保存，原数据与偏好保持。未执行真实撤权、用户PDF／笔记写入，不将此当作真实SAF／享做或冷重启验收。实际覆盖见[D69–D80](DEVICE_ACCEPTANCE.md#v140-流程与界面验收)，设备收尾已核实。
 
 ## 文档与更新日志
 
@@ -32,7 +32,7 @@ MainActivity负责选文件、任务编排和用户确认；ReviewWorkspace负�
 
 ## v1.3.0 授权位置管理
 
-当前正式版1.3.0／code16，标签d85f96fc5f6cdf4105f12e190283613ddc6ce844，Release420586916为Latest，原签名五附件已公开回读校验。main合并PR #5与候选tree一致，后续说明单独维护；v1.2.0未独立发行，其增量已并入本版。授权功能仅管理本工具持久访问权限，不新增物理文件删除路径、权限、外部代码或依赖；保留当前源码、原签名及工具链用于维护。
+此前正式版1.3.0／code16，标签d85f96fc5f6cdf4105f12e190283613ddc6ce844，Release420586916为Latest，原签名五附件已公开回读校验。main合并PR #5与候选tree一致，后续说明单独维护；v1.2.0未独立发行，其增量已并入本版。授权功能仅管理本工具持久访问权限，不新增物理文件删除路径、权限、外部代码或依赖；保留当前源码、原签名及工具链用于维护。
 
 `GrantSelection`维护精确原始授权URI、实际read／write标记、选择集与批量结果；`FilePickerDialog`只在授权根提供左滑、菜单、详情、长按／选择、全选与移除确认，`SwipeGrantRow`处理单行横向操作。导航用document URI不能代替撤权用的原始persisted URI，不能根据人类路径、前缀、父子关系或读写想象扩大释放范围；重叠授权独立保留。
 
