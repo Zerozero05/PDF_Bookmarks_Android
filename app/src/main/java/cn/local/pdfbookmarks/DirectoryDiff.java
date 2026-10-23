@@ -18,6 +18,8 @@ public final class DirectoryDiff {
     public static final class Change {
         public final Kind kind;
         public final TocParser.Row before, after;
+        /** Zero-based positions in the original inputs; -1 means that side is absent. */
+        public final int beforeIndex, afterIndex;
         public final String beforePath, afterPath;
         public final boolean titleChanged, pageChanged, hierarchyChanged;
 
@@ -25,6 +27,8 @@ public final class DirectoryDiff {
             this.kind = kind;
             this.before = before == null ? null : before.row;
             this.after = after == null ? null : after.row;
+            beforeIndex = before == null ? -1 : before.index;
+            afterIndex = after == null ? -1 : after.index;
             beforePath = before == null ? "" : before.path;
             afterPath = after == null ? "" : after.path;
             titleChanged = kind == Kind.CHANGED && !Objects.equals(this.before.title, this.after.title);
@@ -136,7 +140,7 @@ public final class DirectoryDiff {
             while (parents.size() >= row.level) parents.remove(parents.size() - 1);
             if (parents.size() != row.level - 1) throw new IllegalArgumentException("待比较目录缺少父级");
             Entry parent = parents.isEmpty() ? null : parents.get(parents.size() - 1);
-            Entry entry = new Entry(row, parent);
+            Entry entry = new Entry(row, parent, result.size());
             result.add(entry);
             parents.add(entry);
         }
@@ -157,11 +161,13 @@ public final class DirectoryDiff {
 
     private static final class Entry {
         final TocParser.Row row;
+        final int index;
         final String key, parentKey, path;
         Entry match;
 
-        Entry(TocParser.Row row, Entry parent) {
+        Entry(TocParser.Row row, Entry parent, int index) {
             this.row = row;
+            this.index = index;
             parentKey = parent == null ? "" : parent.key;
             key = parentKey + part(row.title);
             path = parent == null ? displayTitle(row.title) : parent.path + " › " + displayTitle(row.title);

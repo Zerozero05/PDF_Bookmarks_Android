@@ -81,6 +81,21 @@ public class DirectoryDiffTest {
         assertEquals(first.describe(), second.describe());
     }
 
+    @Test public void duplicateChangesAndMissingSidesKeepOriginalListIndices() {
+        List<TocParser.Row> before = rows(row(1, "相同标题", 1), row(1, "相同标题", 1), row(1, "旧条目", 9));
+        List<TocParser.Row> after = rows(row(1, "相同标题", 1), row(1, "相同标题", 2), row(1, "新条目", 10));
+        DirectoryDiff.Summary diff = DirectoryDiff.compare(before, after);
+        assertEquals(1, diff.unchanged); assertEquals(1, diff.changed);
+        assertEquals(1, diff.added); assertEquals(1, diff.removed);
+        DirectoryDiff.Change changed = diff.changes.get(0), added = diff.changes.get(1), removed = diff.changes.get(2);
+        assertEquals(1, changed.beforeIndex); assertEquals(1, changed.afterIndex);
+        assertSame(before.get(1), changed.before); assertSame(after.get(1), changed.after);
+        assertEquals(-1, added.beforeIndex); assertEquals(2, added.afterIndex);
+        assertNull(added.before); assertSame(after.get(2), added.after);
+        assertEquals(2, removed.beforeIndex); assertEquals(-1, removed.afterIndex);
+        assertSame(before.get(2), removed.before); assertNull(removed.after);
+    }
+
     @Test public void resultIsImmutableAndEmptyListsWork() {
         assertEquals(0, DirectoryDiff.compare(Collections.emptyList(), Collections.emptyList()).added);
         DirectoryDiff.Summary diff = DirectoryDiff.compare(Collections.emptyList(), rows(row(1, "甲", 1)));

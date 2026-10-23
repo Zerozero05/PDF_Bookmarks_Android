@@ -2,6 +2,18 @@
 
 适用当前PDF＋JSON版。首次交接或续接先读根WORK_CHECKPOINT.md及最新工作交接，再读[现行需求](REQUIREMENTS.md)与VALIDATION.md；不能用旧无障碍工程替代本工程。
 
+## v1.4.0 流程与界面维护
+
+本地试用候选1.4.0／code17，未公开发布。12项实现与分项验证见[完整记录](../CHANGELOG.md#v1-4-0)和[本轮验证](../VALIDATION.md#candidate-v140-2026-10-24)；下面旧版本章节保留为历史，不继承为本轮设备结果。
+
+`TaskOutcome.AWAITING_USER`表示已生成而尚未保存，不能把取消保存记为完成；`RECOVERY_REQUIRED`与既有pending记录共同阻止新写入。生成前预检只读取源哈希、提供者元数据与享做准备快照，不试写、不改名、不探测删除；正式事务仍需重新验证，预检不能保证提供者之后一定允许操作。
+
+`CatalogRetry`只在当前Activity保存已提交PDF的URI／SHA、完整生成目录及来源JSON身份，不重新生成PDF。最终URI、`sourceNeedsReload`及续办上下文在同一UI回调发布，避免草稿混用新URI与旧SHA。同步失败的调整映射复用既有`ReviewDraft` VERSION 1保存，并绑定最终PDF；离开校验使用同一身份。重开依旧重读核验、重新确认，危险模式不恢复，持久事务恢复优先。目录成功但清理失败时保持目录成功；仅在清理已结束、当前PDF与续办上下文及清理计划一致且无pending时结束关联草稿。不得对任意清理成功无条件清除当前核对。
+
+`DirectoryDiff`保留原树的before／after索引；`CatalogDiff.targetPages`按已核实页映射供只读跳转。未知页、手动笔记页或歧义重复项不猜测位置；筛选与定位不改变完整输出树。已保存名称在后台读取一次并缓存，结果刷新不查询提供者；名称为空时回退URI提示。
+
+新增`Workflow140Smoke`和`ReviewWorkspaceSmoke`接入原Startup链；测试采用合成状态，保留旧断言，不能为通过而执行真实撤权、笔记或PDF写入。最终离线构建、单测与lint已完成，原生组件仅编译，本轮ADB无设备，实际启动／触摸／窗口及事务验收仍待[D69–D80](DEVICE_ACCEPTANCE.md#v140-流程与界面验收)。
+
 ## 文档与更新日志
 
 每次修改仓库都同步维护 [README 更新日志](../README.md#更新日志) 与 [完整记录](../CHANGELOG.md)，覆盖功能、修复、兼容性、来源及独立文档更新。README 保留全部已记录更新，采用“版本／更新｜日期｜主要变更”表格，最新在前；日期统一 `YYYY-MM-DD`，每条以“1、新增／修复／调整／文档：具体变化”的短句编号，不写空泛的“优化体验”。

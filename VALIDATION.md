@@ -1,5 +1,50 @@
 # Android 验证记录
 
+<a id="candidate-v140-2026-10-24"></a>
+## v1.4.0 流程与界面本地试用 — 2026-10-24
+
+本轮在原v1.3.0主分支基础上实施用户已确认的12项深度流程与界面优化，VERSION1.4.0／code17，未公开发布。原包名、升级签名、min26／target35、权限、依赖、两种JSON、草稿及事务格式保持；PDF引擎和原安全替换／目录同步／清理／恢复核心不因UI调整替换。保留所有旧入口和断言，不新增OCR、完整编辑、批量或云端，不下载新依赖、复制第三方代码、推送标签或清理本机文件。
+
+| 检查 | 当前真实结果与边界 |
+| --- | --- |
+| 首轮构建 | build-01离线71项任务成功；新增原生核对组件随后接入，最终集成以后面的build-03为准，各轮日志保留 |
+| 最终集中构建 | build-03离线71项任务成功，21秒，23执行／48已是最新；主APK、原生测试APK、JUnit与lint集中完成 |
+| 最终JUnit | 恢复已保留的344页混合原生fixture后，build06全量JUnit共331项：329通过、0失败、0错误、2项原70条JSON相关样本仍缺而跳过；20任务／7秒，原源码与断言不改 |
+| 最终lint | 0错误／25警告，本轮新增告警全部处理；build-02剩余两处新增SetTextI18n已资源化，既有规则与警告保持，无全局忽略或降低门禁 |
+| 后续原生编译 | build-04／05各51任务、14／13秒成功；最终build07原生组件与lint共51任务／14秒成功，7执行／44已是最新，lint0错误／25警告；主APK字节保持，测试APK SHA-256为`d79388297f5ccce0ae3d8e0eb23df1dade9fb1cf1b91e821c475b3b8caec04ca`；最新JUnit以build06为准 |
+| 核对区静态检查 | 差异空白检查、资源XML解析及新字符串引用核对通过；只证明静态一致，不代表Android交互通过 |
+| 127页／47条派生样本 | 候选四输出独立pypdf核验通过，全部页面对象／五类页面框／旋转／解码内容／文字、元数据／XMP、完整源字节前缀及47条标题／层级／顺序／实际目标一致，固定派生输入不变 |
+| 原始输入边界 | 127页／47条那组原始PDF和JSON仍未恢复，本轮只用其派生PDF和已保留完整树证据；另行恢复的344页混合快照不冒充这组原输入或缺失70条私人JSON |
+| 344页混合快照恢复 | 历史manifest核验原`catalog.json.temp`／pageids／doc／PDF的SHA全部一致，pypdf实读344页；原temp原字节仅改为独立fixture所需`catalog.json`文件名，未重建JSON，也未使用内容不同的现存catalog；原混合页案例实际PASS |
+| 性能说明 | 同一派生输入热身后少量宿主计时仅记录波动；PDF引擎未改，不证明UI提速、触控帧率、Android渲染或内存改善 |
+| 本轮原生／设备 | MRO-W00／API31最终instrumentation-05-raw完整Bundle及runner为PASS，含Window／Workflow／Review／Workflow140和Main缓存合成file://四阶段；前两轮FAIL、第三轮PASS与第四轮输出证据不足分别保留。真实可见授权根0，根操作SKIP，固定取消及原持久URI／read-write flags／输入保持通过 |
+| 目视与状态保留 | 常规／大字深色两张合成核对截图已目视，不是PDF渲染；最终Main截图无溢出。Main真实COLD启动458ms及收尾486ms／Status ok仅记观察，不证明提速；当前PID10771崩溃缓冲无FATAL。收尾后主包SHA、UID10229／首次安装2026-10-22 02:00:56／code17及四组原偏好保持，临时test独立核实不存在，USB已恢复原0并读回，未清理宿主文件 |
+| 主APK身份 | 10,975,471字节，SHA-256为`68312df2ba849ecbb274195fccf9179623ba232914598ba84bf3d34d6efdb994`；apksigner v2通过，原证书SHA-256为`405036e63efe1bd2f106e887801f6deec0b1e496e564dc9b4d7e2a56d1017fca` |
+| 元数据与权限 | 实际包`cn.local.pdfbookmarks`／1.4.0／code17／min26／target35，原两权限未变，原升级身份保持 |
+| 源码与交付附件 | 完成打包／独立核验后由外部交接／`verify-release.json`记录结果，不提前宣称最终交付核验通过，也不在包内文档嵌入源码ZIP自身哈希；公开下载仍为v1.3.0 |
+
+build-03当时三项因fixture未提供而跳过，不能笼统判断三个样本都已丢失。后续在保留的2026-10-08混合格式快照中找到原生`catalog.json.temp`、pageids、doc及PDF，全部SHA与当时target-copy-check manifest一致，pypdf实际读出344页。现存`catalog.json`与原temp的usn／子树不同，辅助准备脚本首轮误要求两者相同，已在写入前停止，无副作用，失败记录保留；随后明确取manifest验证的原temp原字节，只为适配原测试固定文件名复制为独立fixture的`catalog.json`，pageids／doc亦保持原字节，没有重建或修改原JSON。证据记录于本轮外部`recovered-mixed-fixture.json`、`build06-summary.json`及`test-results-build06`。
+
+`EnjoyCatalogTest.actualMixedNativeFixturePreservesAllOriginalNodes`现已在build06实际PASS，完整331项中329通过、0失败／错误、2跳过。仍缺原70条JSON的两项为`EnjoyCatalogTest.exactFixtureMatchesVerifiedMergeAndIsIdempotent`与`TocParserTest.realUserJasminumKeepsAllSeventyRowsWithoutPageOffset`，保留原假设和断言；344页混合快照恢复不代表这两项私有输入或127页／47条原始PDF＋JSON已恢复，也不替代设备真实笔记事务。
+
+本轮新增覆盖包括：生成／待保存／待恢复和分项结果、只读预检、有效生成物继续保存、绑定实际保存版本的目录续办、三个独立策略与情境显示、单一底部主动作、实际窗口／大字、短提示与就近帮助、真实来源索引差异定位、浏览页与目标页提示、固定分段列头／48dp删除、分组清理确认及实际保存位置。方法仅参考Android官方[自适应布局](https://developer.android.com/develop/ui/views/layout/canonical-layouts)与[无障碍应用原则](https://developer.android.com/guide/topics/ui/accessibility/apps)，未迁移框架或新增依赖。
+
+最新实现边界：保存成功、目录失败时，当前会话快捷续办只重试目录，不重新生成／替换PDF；离开复用原ReviewDraft v1保存已调整目标页与核对进度，绑定最终PDF URI／hash。重开须重读核验JSON、最终PDF及原JSON目录树后才恢复并重新确认，危险替换模式不自动恢复，原持久journal优先。目录已成功、仅清理失败时保持目录成功；关联旧草稿到清理完成或明确保留剩余并结束清理后才结束。JSON删除失败可确认“保留JSON，结束此可选步骤”，取消不变，确认只结束该可选步骤并标记保留，不改文件／授权。实际保存名在后台查询一次并缓存，正常界面刷新不重复查询；纯诊断报告也提供直接点开的入口。最终集成编译及结果／差异等JVM检查通过；Main缓存合成file://生成／取消／继续保存已设备运行通过，目录续办仅确认范围与合成草稿capture通过，真实SAF／目录续办与冷重启恢复仍待测，不把实现说明当成全部设备验收。
+
+本轮前两次失败证据保存在`instrumentation-01.log`和`instrumentation-02.log`：两轮Main启动／重建及6次系统栏检查完成，Window、Workflow和Review分项均PASS；Window包含3组主题／字号／间距、真实横竖2／2、PDF／JSON选择器及空路径取消，Workflow包含原合成草稿与8项DraftStore／AtomicFile检查。完整runner两轮仍为FAIL，Grant两轮NOT_RUN。首轮Workflow140在“Empty import state retained an obsolete detail action”失败，是关闭弹窗后引用等待异步回调清除的测试时序；次轮已越过该点，在“Keep JSON did not retain the source/previously saved output and clear only its deletion option”失败，是正按钮handler尚未执行即断言。保留原严格断言，只将后续检查排到真实主队列回调之后；生产主APK哈希不变，原失败日志不改写为通过。
+
+次轮Workflow140到达JSON步骤前，合成输入缺项提示／诊断报告、两种另存取消待继续、情境显示／目录模式保持、待恢复定位、实际保存名／URI缓存展示及单一打开入口、保存选项续办、目录续办范围确认与取消、目录成功而清理失败的分项状态已越过对应断言。次轮JSON正向结束断言未通过，保留该失败；第三轮`instrumentation-03.log`完整runner为PASS，随后全部通过JSON保留结束确认／取消、生成失败返回、绑定最终PDF身份并保留调整页码的草稿capture，以及更多外观／更新／帮助入口。该capture仅为合成状态快照，不是同一任务草稿落盘或冷重启恢复；第三轮没有实际文件事务或更新请求。第四轮默认未加-r，只得到PASS stream，严格收集器拒绝计作完整证据；原日志保留，无新源码修改或新断言失败，第五轮`device/instrumentation-05-raw.log`用-r补齐完整Bundle并全部PASS。Main在自己缓存中以合成file://输入实际执行四阶段：①改JSON哈希拒绝且未生成ready／备份；②非SAF原路径替换预检拒绝；③真实生成5页／3条多级书签，拦截ACTION_CREATE_DOCUMENT取消后ready保留、SAVE AWAITING；④实际onActivityResult→exportTo→finishSave核验精确字节／完整树，SAVE SUCCESS／JSON RETAINED，独立测试草稿清除。原输入与原草稿SHA、原备份清单大小／修改时间、原偏好保持。按严格路径复制的五份合成文件在`device/main-pipeline05/verification.json`独立核验通过：pypdf5页／3条完整树，ready.pdf与saved.pdf字节相同。这不是系统SAF提供者或享做正向验收，真实替换／目录同步／清理／JSON删除及同一任务冷重启恢复仍未执行。
+
+第三轮及最终Grant记录真实可见授权根为0，且没有精确persisted tree grant；不据此推断持久单文档授权列表为空。固定取消、原持久URI及read/write flags和Main输入不变通过；没有真实可见根，左滑、选择／详情／移除确认及选择返回等均SKIP。没有为了测试新增或撤销授权，不将旧v1.3.0两个真实根的手势结果移作本轮证明。
+
+独立`ReviewWorkspaceSmoke`已在前两轮设备运行PASS：必要清筛选／展开祖先、重复标题的真实索引、越界／忙碌、加载／失败／全屏浏览提示、字体／窗口后进度与缩放、同方向拖动比例、分段列头／滚动／48dp删除及试算不自动应用。次轮在真实设备用UiAutomation取得常规和大字深色两张截图，已目视核对；白底预览明确标注“合成页面／非实际PDF渲染”，不能代替真实PdfRenderer或用户书籍。参数化窗口检查也不代替物理分屏、小窗、系统字号、触控笔与真实文档交互，具体范围见[D69–D80](docs/DEVICE_ACCEPTANCE.md#v140-流程与界面验收)。
+
+Main真实冷启动先后COLD／458ms和收尾COLD／486ms／Status ok，只记录当前环境的实际观察，不作UI提速结论。最终Main截图已目视无溢出，当前PID10771崩溃缓冲无FATAL。设备收尾由`device/teardown-plan.json`先列精确测试包路径／数据目录，`teardown.log`卸载返回Success，再由`teardown-result.json`独立核实仅剩主包、测试包不存在；主包SHA、UID10229、首次安装2026-10-22 02:00:56及code17保持。四组既有偏好在三轮记录及最终`preferences-after-teardown.json`与测试前一致，USB临时亮屏已恢复原0并读回。只移除本轮临时测试组件，主程序未卸载或清数据，没有撤真实授权、改写用户文档或清理宿主文件；合成缓存与外部证据保留。
+
+宿主对照使用旧验证留下的`complete-47.pdf`派生输入（127页，12根／35子），来源SHA-256为`79b3d808783e3264441b590a392532597d8171b16a10c82aae8ab9ca74fbbf16`。沿用已缓存PDFBox Android、Gson、BouncyCastle及既有JDK／pypdf／Poppler，依赖校验后实际调用生产inspect／write；四输出为一次热身及三次全树替换，47条目标统一+1，未授权替换仍拒绝。pypdf逐页与全树检查和来源哈希有效，不把该宿主结果写为SAF、Activity生命周期、真实笔记事务或原始PDF／JSON验收通过。
+
+本轮README新增第20条摘要及对应完整日志，19条旧摘要和旧CHANGELOG全文保留；最终XML数量与主APK字节／SHA已读回，源码及交付附件仍须在打包后独立核验并写入外部交接记录。以下各版开发、发布及设备记录保留当时事实，其中“本轮／当前”均按对应版本理解。
+
 <a id="formal-v130-2026-10-22"></a>
 ## v1.3.0 正式发行 — 2026-10-22
 

@@ -39,6 +39,7 @@
     <string name="review_next_page">查看下一实际页</string>
     <string name="review_page_range">请输入 1–%1$d 的PDF实际页码</string>
     <string name="review_manual_preview">目标页核对</string>
+    <string name="review_browsing_other_page">浏览第 %1$d 页 · 所选目录目标第 %2$d 页；浏览不会修改目录目标。</string>
     <string name="review_adjust_explanation">以导入后的PDF实际目标页为基准，重复试算不叠加。原JSON不改动；先抽查预览，再明确应用。应用后需要重新勾选核对。</string>
     <string name="review_overall_offset">整体偏移</string>
     <string name="review_segments">分段调整</string>
@@ -48,6 +49,9 @@
     <string name="review_segment_explanation">每行填写原实际页起点、终点和新起始页；未覆盖的原目标保持不变。</string>
     <string name="review_add_segment">添加分段</string>
     <string name="review_remove_segment">删除此分段</string>
+    <string name="review_remove_segment_symbol">×</string>
+    <string name="review_remove_segment_number">删除第 %1$d 个分段</string>
+    <string name="review_segment_field">第 %1$d 个分段：%2$s</string>
     <string name="review_original_start">原起页</string>
     <string name="review_original_end">原止页</string>
     <string name="review_target_start">新起页</string>

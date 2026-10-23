@@ -62,7 +62,7 @@ public final class ReviewWorkspace extends LinearLayout {
     private List<DirectoryViewModel.VisibleRow> displayed = Collections.emptyList();
     private final EditText search;
     private final Button clearSearch, more, zoomIn, zoomOut, zoomFit, fullscreen;
-    private final TextView counts, pageLabel, empty, titleHeading, pageHeading;
+    private final TextView counts, pageLabel, pageContext, empty, titleHeading, pageHeading;
     private final LinearLayout directoryPane, pagePane, searchBar, heading;
     private final ListView list;
     private final BaseAdapter adapter;
@@ -76,7 +76,7 @@ public final class ReviewWorkspace extends LinearLayout {
     private Dialog fullDialog;
     private LinearLayout fullShell;
     private ZoomImageView fullImage;
-    private TextView fullLabel;
+    private TextView fullLabel, fullContext;
     private PageControls fullPageControls;
     private Button[] fullZoomButtons;
     private AdjustmentDialog adjustmentDialog;
@@ -130,6 +130,8 @@ public final class ReviewWorkspace extends LinearLayout {
         more.setContentDescription(getString(R.string.review_v12_actions));
         clearSearch.setMinWidth(0);
         more.setMinWidth(0);
+        pad(clearSearch, 4, 8, 4, 8);
+        pad(more, 4, 8, 4, 8);
         searchBar.addView(clearSearch, new LayoutParams(dp(48), -2));
         searchBar.addView(more, new LayoutParams(dp(48), -2));
         directoryPane.addView(searchBar);
@@ -177,6 +179,7 @@ public final class ReviewWorkspace extends LinearLayout {
                 DirectoryViewModel.VisibleRow visible = displayed.get(position);
                 Button fold = (Button) item.getChildAt(0);
                 appearance.styleButton(fold, false);
+                fold.setPadding(dp(4), dp(6), dp(4), dp(6));
                 fold.setBackground(new RippleDrawable(ColorStateList.valueOf(
                         (appearance.accent & 0x00ffffff) | 0x29000000), null, new ColorDrawable(-1)));
                 fold.setText(visible.expanded ? R.string.review_collapse : R.string.review_expand);
@@ -236,6 +239,10 @@ public final class ReviewWorkspace extends LinearLayout {
         pageLabel.setEllipsize(TextUtils.TruncateAt.END);
         pad(pageLabel, 8, 6, 8, 6);
         pagePane.addView(pageLabel);
+        pageContext = label(activity, R.string.review_preview_hint, 13);
+        pad(pageContext, 8, 0, 8, 4);
+        pageContext.setVisibility(GONE);
+        pagePane.addView(pageContext);
         image = new ZoomImageView(activity);
         image.setZoomListener(value -> updatePageLabels());
         LinearLayout zoomBar = row(activity);
@@ -442,6 +449,7 @@ public final class ReviewWorkspace extends LinearLayout {
         counts.setTextColor(value.secondaryText);
         empty.setTextColor(value.secondaryText);
         pageLabel.setTextColor(value.secondaryText);
+        pageContext.setTextColor(value.secondaryText);
         panes.setDividerColor(value.accent);
         list.setDivider(new ColorDrawable(value.outline));
         list.setDividerHeight(dp(1));
@@ -449,6 +457,7 @@ public final class ReviewWorkspace extends LinearLayout {
         if (fullShell != null) {
             fullShell.setBackgroundColor(value.page);
             styleTree(fullShell);
+            if (fullContext != null) fullContext.setTextColor(value.secondaryText);
             if (fullImage != null) fullImage.setBackgroundColor(value.surfaceVariant);
             if (fullDialog != null && fullDialog.getWindow() != null) {
                 fullDialog.getWindow().setBackgroundDrawable(new ColorDrawable(value.page));
@@ -462,23 +471,31 @@ public final class ReviewWorkspace extends LinearLayout {
     public void onWindowChanged(int widthDp, int heightDp) {
         windowWidth = Math.max(1, widthDp);
         windowHeight = Math.max(1, heightDp);
-        boolean wide = widthDp >= 700;
         float textScale = Math.max(1f, getResources().getConfiguration().fontScale * appearance.textSp(1));
-        int directoryHeight = Math.max(280, Math.round(156 * textScale) + 96);
-        panes.setPaneMinimums(wide ? 220 : directoryHeight, 240);
+        int directoryWidth = Math.round(252 * textScale), pageWidth = Math.round(280 * textScale);
+        boolean wide = windowWidth >= Math.max(700, directoryWidth + pageWidth + 48);
+        int directoryHeight = Math.max(248, Math.round(132 * textScale) + Math.round(112 * textScale));
+        int pageHeight = Math.round(168 * textScale) + 144;
+        panes.setPaneMinimums(wide ? directoryWidth : directoryHeight, wide ? pageWidth : pageHeight);
         if (!windowConfigured || panes.isWide() != wide) {
             if (windowConfigured) persistUi();
             panes.setWide(wide);
             panes.setSplitRatio(preferences.getFloat(wide ? "wide_ratio" : "stacked_ratio", .5f));
             windowConfigured = true;
         }
-        // Keep the search/header plus at least two touch rows visible even at a large system font.
-        int minimumHeight = wide ? Math.max(320, directoryHeight) : Math.max(620, directoryHeight + 240 + 48);
-        int height = Math.max(minimumHeight, wide ? Math.min(620, heightDp - 240)
-                : Math.min(800, heightDp - 160));
+        // The surrounding page can scroll on a short window; each pane still retains its controls.
+        // Taller windows give review a stable share of the actual viewport instead of a fixed cap.
+        int minimumHeight = wide ? Math.max(directoryHeight, pageHeight) : directoryHeight + pageHeight + 48;
+        int height = Math.max(minimumHeight, Math.round(windowHeight * .72f));
         ViewGroup.LayoutParams params = panes.getLayoutParams();
-        params.height = dp(height);
-        panes.setLayoutParams(params);
+        if (params.height != dp(height)) {
+            params.height = dp(height);
+            panes.setLayoutParams(params);
+        }
+        pageControls.updateLayout(textScale);
+        if (fullPageControls != null) fullPageControls.updateLayout(textScale);
+        if (adjustmentDialog != null) adjustmentDialog.updateSegmentViewport();
+        refreshRows(false);
     }
 
     public void persistUi() {
@@ -553,15 +570,34 @@ public final class ReviewWorkspace extends LinearLayout {
         super.onDetachedFromWindow();
     }
 
-    private void selectRow(int sourceIndex) {
-        if (busy || directory == null) return;
+    /** Reveals a current imported source row. Removed entries from an old tree have no source index here. */
+    public boolean revealSourceRow(int sourceIndex) {
+        return selectRow(sourceIndex, true);
+    }
+
+    private void selectRow(int sourceIndex) { selectRow(sourceIndex, false); }
+
+    private boolean selectRow(int sourceIndex, boolean reveal) {
+        if (busy || directory == null || adjustments == null
+                || sourceIndex < 0 || sourceIndex >= directory.sourceCount()) return false;
         directory.select(sourceIndex);
         setSearchText(directory.query());
-        refreshRows(false);
+        refreshRows(reveal);
         TocParser.Row row = adjustments.rows().get(sourceIndex);
         hideKeyboard(search);
         requestPage.accept(row.pdfPage, row.title);
         notifyStateChanged();
+        if (reveal) {
+            final int generation = refreshGeneration;
+            list.post(() -> {
+                if (generation == refreshGeneration && directory != null
+                        && directory.selectedSourceIndex() == sourceIndex) {
+                    list.requestRectangleOnScreen(new Rect(0, 0, list.getWidth(),
+                            Math.min(list.getHeight(), dp(112))), false);
+                }
+            });
+        }
+        return true;
     }
 
     private void refreshRows(boolean reveal) {
@@ -652,6 +688,19 @@ public final class ReviewWorkspace extends LinearLayout {
             if (fullLabel != null) fullLabel.setText(getString(R.string.review_page_title, currentTitle,
                     currentPage, Math.round(fullImage == null ? 100 : fullImage.getZoom() * 100)));
         }
+        updatePageContext();
+    }
+
+    private void updatePageContext() {
+        int selected = directory == null ? -1 : directory.selectedSourceIndex();
+        int target = selected < 0 || adjustments == null ? 0 : adjustments.rows().get(selected).pdfPage;
+        boolean different = currentPage > 0 && target > 0 && currentPage != target;
+        pageContext.setVisibility(different ? VISIBLE : GONE);
+        if (different) pageContext.setText(getString(R.string.review_browsing_other_page, currentPage, target));
+        if (fullContext != null) {
+            fullContext.setVisibility(different ? VISIBLE : GONE);
+            if (different) fullContext.setText(getString(R.string.review_browsing_other_page, currentPage, target));
+        }
     }
 
     private void updateControls() {
@@ -666,6 +715,7 @@ public final class ReviewWorkspace extends LinearLayout {
         if (fullZoomButtons != null) for (Button button : fullZoomButtons) button.setEnabled(previewEnabled);
         pageControls.update();
         if (fullPageControls != null) fullPageControls.update();
+        updatePageContext();
     }
 
     private void showFullscreen() {
@@ -682,6 +732,10 @@ public final class ReviewWorkspace extends LinearLayout {
         Button close = button(dialog.getContext(), R.string.review_close, dialog::dismiss);
         header.addView(close);
         fullShell.addView(header);
+        fullContext = label(dialog.getContext(), R.string.review_preview_hint, 13);
+        fullContext.setTextColor(appearance.secondaryText);
+        fullContext.setVisibility(GONE);
+        fullShell.addView(fullContext);
         LinearLayout zoomBar = row(dialog.getContext());
         Button out = button(dialog.getContext(), R.string.review_zoom_out, () -> fullImage.zoomOut());
         Button in = button(dialog.getContext(), R.string.review_zoom_in, () -> fullImage.zoomIn());
@@ -711,7 +765,7 @@ public final class ReviewWorkspace extends LinearLayout {
         });
         dialog.setOnDismissListener(ignored -> {
             if (fullImage != null) fullImage.setImageDrawable(null);
-            fullImage = null; fullLabel = null; fullShell = null; fullPageControls = null;
+            fullImage = null; fullLabel = null; fullContext = null; fullShell = null; fullPageControls = null;
             fullZoomButtons = null; fullDialog = null;
         });
         dialog.show();
@@ -722,6 +776,7 @@ public final class ReviewWorkspace extends LinearLayout {
             window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
         updatePageLabels();
+        fullPageControls.updateLayout(Math.max(1f, getResources().getConfiguration().fontScale * appearance.textSp(1)));
         fullPageControls.update();
     }
 
@@ -819,6 +874,8 @@ public final class ReviewWorkspace extends LinearLayout {
             go = button(context, R.string.review_go, this::go);
             next = button(context, R.string.review_next, () -> navigate(currentPage < 1 ? 1 : currentPage + 1));
             for (Button button : new Button[]{previous, go, next}) button.setMinWidth(0);
+            pad(previous, 4, 8, 4, 8);
+            pad(next, 4, 8, 4, 8);
             container.addView(previous, new LayoutParams(dp(48), -2));
             container.addView(number, new LayoutParams(0, -2, 1));
             container.addView(go, new LayoutParams(dp(56), -2));
@@ -845,6 +902,12 @@ public final class ReviewWorkspace extends LinearLayout {
             requestPage.accept(page, getString(R.string.review_manual_preview));
         }
 
+        void updateLayout(float textScale) {
+            ViewGroup.LayoutParams params = go.getLayoutParams();
+            int width = dp(Math.max(56, Math.round(34 * textScale) + 24));
+            if (params.width != width) { params.width = width; go.setLayoutParams(params); }
+        }
+
         void update() {
             boolean enabled = !busy && directory != null;
             number.setEnabled(enabled);
@@ -857,7 +920,8 @@ public final class ReviewWorkspace extends LinearLayout {
 
     private final class AdjustmentDialog {
         final AlertDialog dialog;
-        final LinearLayout form, segmentRows, overallBox, segmentBox, candidatesBox;
+        final LinearLayout form, segmentRows, segmentColumns, overallBox, segmentBox, candidatesBox;
+        final ScrollView segmentScroll;
         final RadioGroup mode;
         final RadioButton overallMode, segmentMode;
         final EditText offset;
@@ -899,8 +963,24 @@ public final class ReviewWorkspace extends LinearLayout {
             form.addView(overallBox);
             segmentBox = column(context);
             segmentBox.addView(label(context, R.string.review_segment_explanation, 13));
+            segmentColumns = row(context);
+            pad(segmentColumns, 0, 8, 0, 4);
+            for (int resource : new int[]{R.string.review_original_start, R.string.review_original_end,
+                    R.string.review_target_start}) {
+                TextView column = label(context, resource, 13);
+                column.setGravity(Gravity.CENTER);
+                column.setTypeface(null, Typeface.BOLD);
+                segmentColumns.addView(column, new LayoutParams(0, -2, 1));
+            }
+            segmentColumns.addView(new View(context), new LayoutParams(dp(48), 1));
+            segmentBox.addView(segmentColumns);
             segmentRows = column(context);
-            segmentBox.addView(segmentRows);
+            segmentScroll = new ScrollView(context);
+            segmentScroll.setNestedScrollingEnabled(true);
+            segmentScroll.setVerticalScrollBarEnabled(true);
+            segmentScroll.setScrollbarFadingEnabled(false);
+            segmentScroll.addView(segmentRows);
+            segmentBox.addView(segmentScroll, new LayoutParams(-1, -2));
             addSegment = button(context, R.string.review_add_segment, this::addSegment);
             segmentBox.addView(addSegment);
             form.addView(segmentBox);
@@ -971,7 +1051,25 @@ public final class ReviewWorkspace extends LinearLayout {
             SegmentInputs inputs = new SegmentInputs(form.getContext());
             segments.add(inputs);
             segmentRows.addView(inputs.container);
+            updateSegmentViewport();
             invalidateTrial();
+        }
+
+        void updateSegmentViewport() {
+            float textScale = Math.max(1f, getResources().getConfiguration().fontScale * appearance.textSp(1));
+            // Keep the column labels outside this bounded scroll area when many ranges are entered.
+            int height = segments.size() > 3 ? dp(Math.round(56 * textScale) * 3) : LayoutParams.WRAP_CONTENT;
+            ViewGroup.LayoutParams params = segmentScroll.getLayoutParams();
+            if (params.height != height) { params.height = height; segmentScroll.setLayoutParams(params); }
+            for (int i = 0; i < segments.size(); i++) {
+                SegmentInputs inputs = segments.get(i);
+                inputs.remove.setContentDescription(getString(R.string.review_remove_segment_number, i + 1));
+                int[] labels = {R.string.review_original_start, R.string.review_original_end, R.string.review_target_start};
+                EditText[] fields = {inputs.start, inputs.end, inputs.target};
+                for (int j = 0; j < fields.length; j++) {
+                    fields[j].setContentDescription(getString(R.string.review_segment_field, i + 1, getString(labels[j])));
+                }
+            }
         }
 
         void invalidateTrial() {
@@ -1088,9 +1186,11 @@ public final class ReviewWorkspace extends LinearLayout {
             styleTree(form);
             appearance.styleChoice(overallMode);
             appearance.styleChoice(segmentMode);
+            segmentColumns.setBackgroundColor(appearance.surfaceVariant);
             trialImage.setBackgroundColor(appearance.surfaceVariant);
             appearance.styleDialog(dialog);
             if (candidate == null) trialSummary.setTextColor(appearance.secondaryText);
+            updateSegmentViewport();
         }
 
         final class SegmentInputs {
@@ -1099,25 +1199,32 @@ public final class ReviewWorkspace extends LinearLayout {
             final Button remove;
 
             SegmentInputs(Context context) {
-                container = column(context);
-                pad(container, 0, 4, 0, 8);
-                LinearLayout fields = row(context);
+                container = row(context);
+                pad(container, 0, 4, 0, 4);
                 start = input(context, R.string.review_original_start, true);
                 end = input(context, R.string.review_original_end, true);
                 target = input(context, R.string.review_target_start, true);
                 for (EditText input : new EditText[]{start, end, target}) {
                     input.setMinWidth(0);
-                    fields.addView(input, new LayoutParams(0, -2, 1));
+                    input.setSingleLine(true);
+                    input.setSelectAllOnFocus(true);
+                    input.setGravity(Gravity.CENTER);
+                    input.setHint(null);
+                    container.addView(input, new LayoutParams(0, -2, 1));
                     input.addTextChangedListener(watcher(AdjustmentDialog.this::invalidateTrial));
                 }
-                container.addView(fields);
                 remove = button(context, R.string.review_remove_segment, () -> {
                     if (busy) return;
                     segments.remove(this);
                     segmentRows.removeView(container);
+                    updateSegmentViewport();
                     invalidateTrial();
                 });
-                container.addView(remove);
+                remove.setText(R.string.review_remove_segment_symbol);
+                remove.setMinWidth(0);
+                remove.setMinimumWidth(0);
+                pad(remove, 4, 8, 4, 8);
+                container.addView(remove, new LayoutParams(dp(48), -2));
             }
 
             void setEnabled(boolean enabled) {

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workflow_waiting_user">等待继续</string>
+    <string name="workflow_recovery_required">需要恢复</string>
+    <string name="workflow_stage_preflight">正在只读检查保存与同步条件</string>
+    <string name="workflow_saved_location">已保存：%1$s</string>
+    <string name="workflow_change_previewed">正在预览变化对应的PDF页；未更改目录或页码。</string>
+    <string name="workflow_json_kept_end">已结束JSON删除步骤，其他成功结果保持。</string>
+</resources>

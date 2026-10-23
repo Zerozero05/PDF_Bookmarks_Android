@@ -8,6 +8,7 @@ import static cn.local.pdfbookmarks.TaskOutcome.Overall.EMPTY;
 import static cn.local.pdfbookmarks.TaskOutcome.Overall.IN_PROGRESS;
 import static cn.local.pdfbookmarks.TaskOutcome.Overall.COMPLETE;
 import static cn.local.pdfbookmarks.TaskOutcome.Overall.PARTIAL;
+import static cn.local.pdfbookmarks.TaskOutcome.Overall.WAITING_ACTION;
 import static org.junit.Assert.*;
 
 public class TaskOutcomeTest {
@@ -54,6 +55,64 @@ public class TaskOutcomeTest {
         TaskOutcome result = new TaskOutcome(); result.begin("核对已有目录");
         result.set(PDF, SKIPPED, "目录已相同"); result.set(JSON, RETAINED, "按设置保留");
         assertEquals(COMPLETE, result.overall());
+    }
+    @Test public void cancelledSaveWaitsForUserAndKeepsVerifiedPdfAvailable() {
+        TaskOutcome result = new TaskOutcome(); result.begin("另存PDF");
+        result.set(PDF, SUCCESS, "PDF已生成并核验");
+        result.set(SAVE, AWAITING_USER, "已取消另存，可继续保存");
+        result.set(JSON, RETAINED, "JSON保留");
+        assertEquals(WAITING_ACTION, result.overall());
+        assertTrue(result.summary().contains("等待"));
+        assertEquals(SUCCESS, result.entries().get(0).status);
+        assertEquals("PDF已生成并核验", result.entries().get(0).detail);
+        assertEquals(AWAITING_USER, result.entries().get(1).status);
+    }
+    @Test public void retryAfterCancelledSaveCompletesTheSameTask() {
+        TaskOutcome result = new TaskOutcome(); int task = result.begin("另存PDF");
+        result.set(PDF, SUCCESS, "已生成并核验"); result.set(SAVE, AWAITING_USER, "待继续保存");
+        assertEquals(WAITING_ACTION, result.overall());
+        assertTrue(result.setIfCurrent(task, SAVE, RUNNING, "正在保存"));
+        assertEquals(IN_PROGRESS, result.overall());
+        assertTrue(result.setIfCurrent(task, SAVE, SUCCESS, "已保存并重新核验"));
+        assertEquals(COMPLETE, result.overall()); assertEquals(task, result.generation());
+        assertEquals(SUCCESS, result.entries().get(0).status);
+    }
+    @Test public void saveFailurePreservesGeneratedPdfAndRetainedJson() {
+        TaskOutcome result = new TaskOutcome(); result.begin("另存PDF");
+        result.set(PDF, SUCCESS, "可重试保存的生成副本");
+        result.set(SAVE, FAILED, "保存位置无法写入"); result.set(JSON, RETAINED, "未删除JSON");
+        assertEquals(PARTIAL, result.overall());
+        assertEquals(SUCCESS, result.entries().get(0).status);
+        assertEquals("可重试保存的生成副本", result.entries().get(0).detail);
+        assertEquals(RETAINED, result.entries().get(3).status);
+    }
+    @Test public void catalogOnlySyncCompletesWithoutPretendingPdfWasWritten() {
+        TaskOutcome result = new TaskOutcome(); result.begin("只同步享做目录");
+        result.set(PDF, RETAINED, "PDF与笔迹保留");
+        result.set(CATALOG, SUCCESS, "目录已同步并核验"); result.set(JSON, RETAINED, "JSON保留");
+        assertEquals(COMPLETE, result.overall());
+        assertEquals(RETAINED, result.entries().get(0).status);
+        assertEquals(NOT_REQUESTED, result.entries().get(1).status);
+    }
+    @Test public void pendingRecoveryTakesPrecedenceOverFailureAndUserChoice() {
+        TaskOutcome result = new TaskOutcome(); result.begin("生成并替换");
+        result.set(PDF, SUCCESS, "新PDF已生成"); result.set(SAVE, FAILED, "替换未完成");
+        result.set(CLEANUP, RECOVERY_REQUIRED, "存在待恢复记录，保留备份");
+        result.set(JSON, AWAITING_USER, "等待处理恢复事项");
+        assertEquals(TaskOutcome.Overall.RECOVERY_REQUIRED, result.overall());
+        assertTrue(result.summary().contains("恢复"));
+        assertEquals(SUCCESS, result.entries().get(0).status);
+        assertEquals(FAILED, result.entries().get(1).status);
+        result.set(CLEANUP, RETAINED, "恢复已完成，备份保留");
+        assertEquals(PARTIAL, result.overall());
+    }
+    @Test public void failedStageRemainsVisibleWhileAnotherStageAwaitsUser() {
+        TaskOutcome result = new TaskOutcome(); result.begin("同步并清理");
+        result.set(CATALOG, SUCCESS, "目录已同步"); result.set(JSON, FAILED, "JSON删除失败");
+        result.set(CLEANUP, AWAITING_USER, "等待选择清理方式");
+        assertEquals(PARTIAL, result.overall());
+        result.set(CATALOG, RETAINED, "已有目录保留");
+        assertEquals(TaskOutcome.Overall.FAILED, result.overall());
     }
     @Test public void newTaskRejectsOldCallbackAndResetsStages() {
         TaskOutcome result = new TaskOutcome(); int old = result.begin("上次任务");
