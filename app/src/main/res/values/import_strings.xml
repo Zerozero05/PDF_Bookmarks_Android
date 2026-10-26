@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="import_saving_json">正在保存JSON输入，可取消返回。</string>
+    <string name="import_json_unverified">应用内JSON输入尚未核实，请重新分享或选择JSON。</string>
+    <string name="import_json_cleared">本次JSON输入已清理；源文件情况见结果详情</string>
+    <string name="import_delete_json_option">成功后删除JSON源文件及本次导入副本</string>
+    <string name="import_selection_failed">文件选择未保存</string>
+    <string name="import_selection_uncertain">文件选择保存状态尚未确认，输入副本已保留。请重新打开程序后核对文件选择，再继续处理。</string>
+    <string name="import_select_pdf">选择PDF</string>
+    <string name="import_select_json">选择JSON</string>
+    <string name="import_source_missing">来源应用暂时没有提供可读取的文件，原选择和草稿保留。</string>
+    <string name="import_source_recovery">来源文件暂时不可读取、已移动，或来源应用没有提供当前可用的权限。请重新分享文件；若仍不成功，请在QQ或华为文件管理器将文件复制到Download后选择。此前已确认导入的JSON可继续从应用内输入区读取。\n\n无需授权Android/data，这个目录无法在本工具中授权。</string>
+</resources>

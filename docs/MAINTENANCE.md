@@ -2,6 +2,22 @@
 
 适用当前PDF＋JSON版。首次交接或续接先读根WORK_CHECKPOINT.md及最新工作交接，再读[现行需求](REQUIREMENTS.md)与VALIDATION.md；不能用旧无障碍工程替代本工程。
 
+## v1.4.2 分享输入与保存性能维护
+
+1.4.2／code19为已完成本地修复的未发布候选，正式下载仍为v1.4.0；本轮未公开发布或清理电脑文件。[完整记录](../CHANGELOG.md#v1-4-2)与[用法](USER_GUIDE.md#v142-json-输入与保存)同步维护；旧段落保持当时行为，不覆盖本次经确认的默认值。
+
+`JsonInputRef`将源URI／名称／哈希与本工具UUID分开，`JsonInputStore`只管理 `files/imports/json` 对应输入及元数据。确认前实际读取并严格校验4MB／UTF-8／JSON，确认后提交文件对和副本ID，失败、取消与旧回调不覆盖有效选择。InputSelectionCommit核实commit失败后的内存与持久状态，确认原字段恢复后才释放未使用副本，无法确定归属则保留。ReviewDraft v1原14字段及严格解析保持，恢复按源身份和哈希核实副本，不恢复核对许可；副本名称显示不再访问失效源，刷新授权不改变绑定。SecurityException与FileNotFoundException在主提示提供重新分享／Download恢复，详情保留实际原因，不向单文件分享循环请求Android/data。
+
+源清理按任务ID、精确URI／哈希和副本ID记录。只自动清理已核实删除能力、身份和内容均未变的源及本次副本；未知提供者不调用泛化删除，旧回调不清除后来输入。PDF与所选同步成功后执行，失败／恢复未结束时保留；只读源保留人工待办，不阻止主任务、新任务或更新，也不重新生成。默认全部替换PDF书签和享做旧目录（含手动项）、成功后清理JSON；保留并添加与关闭清理仍可选，笔迹和页面配置不变。
+
+PreparedOutput和享做准备结果只在同次流程的URI／哈希／完整目录／模式一致时复用。StagedDocuments.findAll保持每次完整解析目录，筛选请求名称后再创建URI；重复与缺失显式保留。child每次用findDocumentPath证明直接父目录，再fresh query唯一且ID一致的元数据，不用“后代”代替直接子项，不缓存成员关系。null、不支持或另一合法canonical路径回到原freshchildren；根／终点冲突、权限失效、丢失及元数据不唯一仍停止。VerifiedOutput只省去单独扫描，在实际复制时重算哈希；源前后内容、备份前校验、最终输出独立读回、改名事务及恢复日志保持。
+
+最终394项中391通过、3旧私有fixture缺失跳过，0失败／错误；lint0错误／23警告。设备跨UID336项动态断言、VerifiedPdf、Main两组合成生成／取消／续存／精确清理，以及真正force-stop不同PID且源撤权后的v1草稿恢复通过。目标真实238页PDF／39条JSON只读prepare各3轮通过：合并中位11270→3532ms、替换11852→3644ms，目录列举14→4，每轮仍10流／68221304B。此比较限于本轮两个候选的真实只读预检；不外推真实写入、旧正式版APK、其他文件或200MiB。50MiB受控模型、安装与未测范围集中见[本次记录](../CHANGELOG.md#v1-4-2)，不以宿主或合成结果冒充真实笔记事务。
+
+已装主包为1.4.2／code19，SHA-256 `daf552b8178e3360ee6723f5cd086bcfc2caf42d8c2af8a248792091811147b5`，与最终本地包一致；保留原升级签名和应用数据。辅助包字节也已逐一核实。真实只读检查期间输入、4组偏好、授权、草稿、应用输入区与所读原文件哈希保持。安装前后另核对指定资源目录根层93份原文件，名称集合及SHA全部一致，不当作递归笔迹附件全覆盖；全阶段只有输入选择组偏好因用户实际QQ导入改变，其余3组保持。已确认JSON副本及来源／哈希绑定最终一致，未删除用户JSON。最终Main两份合成输出另以pypdf内存独立解析，5页、3节点、层级1／2／1、目标页1／2／3和SHA全部核对通过；这些输出属于隔离测试，本轮不曾生成、同步、备份或删除真实笔记资料。
+
+沿用原实现，没有新增依赖或复制外部代码；实时直接父身份方法参考Android官方[findDocumentPath](https://developer.android.com/reference/android/provider/DocumentsContract#findDocumentPath(android.content.ContentResolver,%20android.net.Uri))。来源未授予的权限不能由接收端创造；不增加全盘权限，不导出来源Provider。
+
 ## v1.4.0 流程与界面维护
 
 当前正式版1.4.0／code17，Release422299598为Latest；标签b1055a3c8a8b8906c61a0957477edd1b0d507a4d及原签名五附件已公开实读，main同候选tree合并并通过CI。正式说明见[记录](../VALIDATION.md#formal-v140-2026-10-24)，实现与边界见[完整日志](../CHANGELOG.md#v1-4-0)；旧版本段落保留为历史。
@@ -67,6 +83,12 @@ Main以正在读取／生成／保存／分享识别／系统选择和待PDF／�
 旧PDF的`PdfBookmarks.inspect`允许null／空书签标题和未解析目的地，`DirectoryDiff`必须兼容这个真实生产输入边界；仅显示层给未命名提示，匹配键分别编码null、空串与真实同名字串，未知页不得改成1。新增2项JUnit与2组合成旧PDF生产inspect链回归通过；不为修复摘要崩溃去放宽新JSON标题或写入规则。
 
 `SharedImport`处理分享的明确PDF／JSON内容URI，Activity在用户确认后才改变输入，保留其他输入选择入口。不接受网络URL、file路径或含多个同类型文档的模糊组合；临时只读授权不等于持久授权，也不等于tree创建／改名授权。不得让分享Intent绕过核对或触发生成、替换、目录同步和删除。来源权限失效应提示重选，不清应用数据。
+
+v1.4.1候选将JSON的`ACTION_VIEW`接入相同文件确认边界，系统单文件选择用`EXTRA_INITIAL_URI`提示`Download`。原始共享路径中的`Android/data`／`obb`受系统限制，不能显示为可通过再次tree授权解决；明确来源应用分享的合法content URI仍由真实授权和读取校验决定。不得为此增加全盘权限、将临时读授权当作持久授权，或更改PDF替换权限。仅参考Android官方[文档限制](https://developer.android.com/about/versions/11/privacy/storage#document-access-restrictions)、[文件选择接口](https://developer.android.com/training/data-storage/shared/documents-files)及[安全单文件分享](https://developer.android.com/training/secure-file-sharing/share-file)，没有新增外部代码或运行依赖。
+
+享做原生PDF目录的空`pageId`适配使用显式模型入口，原严格入口契约和旧断言保留。非负整数`page`必须在实际页数范围内，并经当前document的docIndex与doc.pages唯一交叉映射；只在匹配／差异中解析目标，不改已有节点字段。无native上下文的差异预览不能猜测跳转页，未知映射仍停止。合并幂等、不同页不折叠、替换模式、坏输入及原严格入口需要分别回归；模型测试和只读预检不能当作真实笔记事务成功。
+
+本次最终电脑结果343项中340通过／0失败／3项指定fixture缺失跳过，lint0错误／25既有警告；未传旧mixedFixture导致3跳过，不改写历史2跳过结果。最终1.4.1／code18按原签名保留数据安装，UID10229／首次时间保持。专用 `StartupSmoke -e readOnly141 true`只读runner全部通过，默认完整runner保留：实际238页PDF／39条JSON的两模式prepare与diff、合法JSON VIEW取消、Download初始URI及受限路径不发TREE均验证；四组偏好／授权flags／草稿、93份关联文件SHA保持，无文件增减。没有执行apply、生成、删除或备份，来源QQ／文件管理器实际URI发送及本轮真实保存仍未验；测试组件目前仍装，不宣称已移除。APK绑定与完整范围见[本次日志](../CHANGELOG.md#v1-4-1)，本轮未公开发布或本机清理。
 
 界面保持文件、核对、结果三个区域及底部主操作；概要、完整路径、差异和行详情按需展开。返回先处理当前输入或视图层次，真正写入阶段保持原恢复保护；读取取消仍使用旧回调令牌隔离。结果自动定位和文件区收起不能隐藏待恢复入口、保存重试或唯一清理入口，也不能改变任何状态判定。
 

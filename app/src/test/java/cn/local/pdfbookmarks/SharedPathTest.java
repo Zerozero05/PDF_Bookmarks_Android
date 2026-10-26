@@ -62,6 +62,17 @@ public class SharedPathTest {
         assertEquals("primary:Books/Android/data/书.pdf", SharedPath.documentId("Books/Android/data/书.pdf"));
     }
 
+    @Test public void restrictedPathHasSpecificRecoveryAcrossSharedStorageAliases() {
+        for (String input : new String[]{"/Android/data/app/目录.json", "Android/obb/app/目录.json",
+                "/storage/emulated/0/Android//data/app/目录.json", "/sdcard/Android/DaTa/app/目录.json",
+                "file:///sdcard/Android/%64ata/app/%E7%9B%AE%E5%BD%95.json"}) {
+            try { SharedPath.documentId(input); fail("Restricted directory should not offer another folder grant"); }
+            catch (SharedPath.RestrictedPathException expected) { assertTrue(expected.getMessage().contains("系统")); }
+        }
+        assertEquals("primary:Android/media/app/目录.json", SharedPath.documentId("/Android/media/app/目录.json"));
+        assertEquals("primary:Books/Android/data/目录.json", SharedPath.documentId("Books/Android/data/目录.json"));
+    }
+
     @Test public void rejectsEmptyRemoteAndUnsupportedUris() {
         for (String input : new String[]{null, "", "   ", "/", "/sdcard", "/storage/emulated/0/",
                 "file://server/sdcard/书.pdf", "file:///sdcard/书.pdf?query=1",

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission android:name="cn.local.pdfbookmarks.sharefixture.CONTROL"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="cn.local.pdfbookmarks.sharefixture.CONTROL" />
+    <application android:allowBackup="false" android:label="JSON分享验证源"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <provider android:name=".FixtureProvider"
+            android:authorities="cn.local.pdfbookmarks.sharefixture.files"
+            android:exported="false" android:grantUriPermissions="true" />
+        <provider android:name=".FixtureDocumentsProvider"
+            android:authorities="cn.local.pdfbookmarks.sharefixture.documents"
+            android:exported="true" android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter><action android:name="android.content.action.DOCUMENTS_PROVIDER" /></intent-filter>
+        </provider>
+        <activity android:name=".ShareFixtureActivity" android:exported="true"
+            android:permission="cn.local.pdfbookmarks.sharefixture.CONTROL" />
+    </application>
+</manifest>

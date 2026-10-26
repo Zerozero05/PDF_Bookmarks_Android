@@ -19,8 +19,10 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,13 +39,17 @@ public final class EnjoyCatalog {
         // 替换模式的addedCount表示需要写入的新目录数；完全相同为0，totalCount始终是最终数量。
         public final int originalCount, addedCount, totalCount;
         public final boolean replacesExisting;
+        /** Zero-based native PDF page indices, accepted only by the explicit native-format entry. */
+        public final Map<Integer, String> nativePageIds;
 
-        private Plan(byte[] json, int originalCount, int addedCount, int totalCount, boolean replacesExisting) {
+        private Plan(byte[] json, int originalCount, int addedCount, int totalCount, boolean replacesExisting,
+                     Map<Integer, String> nativePageIds) {
             this.json = json;
             this.originalCount = originalCount;
             this.addedCount = addedCount;
             this.totalCount = totalCount;
             this.replacesExisting = replacesExisting;
+            this.nativePageIds = Collections.unmodifiableMap(new LinkedHashMap<>(nativePageIds));
         }
     }
 
@@ -56,6 +62,19 @@ public final class EnjoyCatalog {
     /** 明确选择替换时只替换根kids；原字节备份和文件切换由调用方按既有流程完成。 */
     public static Plan merge(byte[] catalog, byte[] pageids, byte[] doc, String androidPdfPath,
                              int actualPageCount, List<TocParser.Row> rows, boolean replaceExisting) throws IOException {
+        return merge(catalog, pageids, doc, androidPdfPath, actualPageCount, rows, replaceExisting, false);
+    }
+
+    /** 已核实的原生PDF目录还可使用空pageId及0起page；目标仍须由所选PDF与doc共同证实。 */
+    public static Plan mergeNativePdfBookmarks(byte[] catalog, byte[] pageids, byte[] doc,
+                                               String androidPdfPath, int actualPageCount,
+                                               List<TocParser.Row> rows, boolean replaceExisting) throws IOException {
+        return merge(catalog, pageids, doc, androidPdfPath, actualPageCount, rows, replaceExisting, true);
+    }
+
+    private static Plan merge(byte[] catalog, byte[] pageids, byte[] doc, String androidPdfPath,
+                              int actualPageCount, List<TocParser.Row> rows, boolean replaceExisting,
+                              boolean nativePdfBookmarks) throws IOException {
         if (actualPageCount < 1) throw invalid("PDF 实际总页数必须为正整数");
         if (rows == null || rows.isEmpty()) throw invalid("待同步目录不能为空");
         final String selected;
@@ -63,21 +82,24 @@ public final class EnjoyCatalog {
         catch (IllegalArgumentException e) { throw invalid("无法核实所选 PDF 路径：" + e.getMessage()); }
 
         JsonObject root = object(parse(catalog, "catalog.json"), "catalog.json");
-        int originalCount = validateNode(root, true, "catalog.json");
         Map<Integer, String> targets = targets(parse(pageids, "pageids.json"),
                 parse(doc, "doc"), selected, actualPageCount);
+        Map<Integer, String> nativePageIds = new LinkedHashMap<>();
+        int originalCount = validateNode(root, true, "catalog.json", nativePdfBookmarks,
+                targets, actualPageCount, nativePageIds);
         JsonArray incoming = incoming(rows, targets, actualPageCount);
         if (replaceExisting) {
             int total = rows.size();
             boolean changed = !root.getAsJsonArray("kids").equals(incoming);
             if (changed) root.add("kids", incoming);
             return new Plan(changed ? JSON.toJson(root).getBytes(StandardCharsets.UTF_8) : catalog.clone(),
-                    originalCount, changed ? total : 0, total, true);
+                    originalCount, changed ? total : 0, total, true, nativePageIds);
         }
-        int added = mergeKids(array(root.get("kids"), "catalog.json.kids"), incoming);
+        int added = mergeKids(array(root.get("kids"), "catalog.json.kids"), incoming, nativePageIds);
         // 完全相同的重复导入不重写原文件，也不改变它的空白、数值表示或字段顺序。
         return new Plan(added == 0 ? catalog.clone()
-                : JSON.toJson(root).getBytes(StandardCharsets.UTF_8), originalCount, added, originalCount + added, false);
+                : JSON.toJson(root).getBytes(StandardCharsets.UTF_8), originalCount, added, originalCount + added, false,
+                nativePageIds);
     }
 
     private static Map<Integer, String> targets(JsonElement pageids, JsonElement doc,
@@ -133,7 +155,7 @@ public final class EnjoyCatalog {
             String id = targets.get(row.pdfPage - 1);
             if (id == null) throw invalid("PDF 第 " + row.pdfPage + " 页没有唯一且已核实的享做页映射");
             JsonArray siblings = parents.isEmpty() ? root : parents.get(parents.size() - 1).getAsJsonArray("kids");
-            if (match(siblings, title, id) != null) throw invalid("导入目录包含无法区分的重复同级条目");
+            if (match(siblings, title, id, Collections.emptyMap()) != null) throw invalid("导入目录包含无法区分的重复同级条目");
             JsonObject node = new JsonObject();
             node.addProperty("dirty", false);
             node.addProperty("expand", false);
@@ -148,26 +170,28 @@ public final class EnjoyCatalog {
         return root;
     }
 
-    private static int mergeKids(JsonArray existing, JsonArray incoming) throws IOException {
+    private static int mergeKids(JsonArray existing, JsonArray incoming, Map<Integer, String> nativePageIds) throws IOException {
         int added = 0;
         for (JsonElement value : incoming) {
             JsonObject node = value.getAsJsonObject();
-            JsonObject match = match(existing, node.get("title").getAsString(), node.get("pageId").getAsString());
+            JsonObject match = match(existing, node.get("title").getAsString(), node.get("pageId").getAsString(), nativePageIds);
             if (match == null) {
                 existing.add(node);
                 added += validateNode(node, false, "新增目录");
             } else {
-                added += mergeKids(match.getAsJsonArray("kids"), node.getAsJsonArray("kids"));
+                added += mergeKids(match.getAsJsonArray("kids"), node.getAsJsonArray("kids"), nativePageIds);
             }
         }
         return added;
     }
 
-    private static JsonObject match(JsonArray siblings, String title, String id) throws IOException {
+    private static JsonObject match(JsonArray siblings, String title, String id, Map<Integer, String> nativePageIds) throws IOException {
         JsonObject found = null;
         for (JsonElement value : siblings) {
             JsonObject node = value.getAsJsonObject();
-            if (title.equals(node.get("title").getAsString()) && id.equals(node.get("pageId").getAsString())) {
+            String existingId = node.get("pageId").getAsString();
+            if (existingId.isEmpty()) existingId = nativePageIds.get(node.get("page").getAsInt());
+            if (title.equals(node.get("title").getAsString()) && id.equals(existingId)) {
                 if (found != null) throw invalid("已有目录包含多个相同标题与页标识的同级条目，无法安全合并");
                 found = node;
             }
@@ -176,18 +200,31 @@ public final class EnjoyCatalog {
     }
 
     private static int validateNode(JsonObject node, boolean root, String label) throws IOException {
+        return validateNode(node, root, label, false, Collections.emptyMap(), 0, new LinkedHashMap<>());
+    }
+
+    private static int validateNode(JsonObject node, boolean root, String label, boolean nativePdfBookmarks,
+                                    Map<Integer, String> targets, int pageCount,
+                                    Map<Integer, String> nativePageIds) throws IOException {
         bool(node.get("dirty"), label + ".dirty");
         bool(node.get("expand"), label + ".expand");
         int page = integer(node.get("page"), label + ".page");
-        // 真实旧目录可同时保存 -1 与非负 page；保留原值，目标仍由明确的 pageId 核实。
+        // 保留旧page原值；原生PDF格式的空ID仅通过所选PDF与doc共同核实的映射解析。
         if ((root && page != -1) || page < -1) throw invalid(label + ".page 使用了尚未核实的享做目录页码格式");
-        String pageId = text(node.get("pageId"), label + ".pageId", root);
+        String pageId = text(node.get("pageId"), label + ".pageId", root || nativePdfBookmarks);
+        if (!root && pageId.isEmpty()) {
+            if (page < 0 || page >= pageCount) throw invalid(label + ".page 的原生PDF页码无效");
+            String mapped = targets.get(page);
+            if (mapped == null) throw invalid("原目录PDF第 " + (page + 1) + " 页缺少唯一且已核实的享做页映射");
+            nativePageIds.put(page, mapped);
+        }
         String title = text(node.get("title"), label + ".title", root);
         if (integer(node.get("usn"), label + ".usn") < 0) throw invalid("享做目录同步计数无效");
         if (root && (!pageId.isEmpty() || !title.isEmpty())) throw invalid("尚未核实这个享做目录的根节点格式");
         int count = root ? 0 : 1;
         for (JsonElement child : array(node.get("kids"), label + ".kids")) {
-            count += validateNode(object(child, label + ".kids 条目"), false, label + ".kids");
+            count += validateNode(object(child, label + ".kids 条目"), false, label + ".kids",
+                    nativePdfBookmarks, targets, pageCount, nativePageIds);
         }
         return count;
     }

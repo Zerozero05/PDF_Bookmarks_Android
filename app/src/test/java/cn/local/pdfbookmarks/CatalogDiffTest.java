@@ -100,4 +100,58 @@ public class CatalogDiffTest {
         assertEquals(1, summary.removed); assertEquals(Collections.singletonList(19), summary.targetPages);
         assertEquals(0, summary.changes.get(0).beforeIndex); assertEquals(-1, summary.changes.get(0).afterIndex);
     }
+
+    private static String nativeNode(String title, int page) {
+        return "{\"title\":\"" + title + "\",\"pageId\":\"\",\"page\":" + page + ",\"kids\":[]}";
+    }
+
+    @Test public void nativePagesRemainDistinctAndUnknownWithoutVerifiedNativeContext() {
+        byte[] before = catalog(nativeNode("章", 8)), after = catalog(nativeNode("章", 9));
+        CatalogDiff.Summary summary = CatalogDiff.compare(before, after);
+        assertEquals(1, summary.changed); assertEquals(1, summary.pageChanged); assertEquals(0, summary.unchanged);
+        assertEquals(Collections.singletonList(0), summary.targetPages);
+        assertTrue(summary.describe().contains("原页索引：8")); assertTrue(summary.describe().contains("原页索引：9"));
+        assertFalse(summary.describe().contains("PDF 第"));
+        Map<String, Integer> known = new HashMap<>(); known.put("", 10); known.put("pg9", 10);
+        assertEquals(Collections.singletonList(0), CatalogDiff.compare(before, after, known).targetPages);
+    }
+
+    @Test public void verifiedNativeAndExplicitIdsRepresentTheSameTarget() {
+        byte[] before = catalog(nativeNode("章", 8)), after = catalog(node("章", "pg8", ""));
+        CatalogDiff.Summary summary = CatalogDiff.compare(before, after, Collections.singletonMap("pg8", 9),
+                Collections.singletonMap(8, "pg8"));
+        assertEquals(1, summary.unchanged); assertEquals(0, summary.changed);
+        assertEquals(0, summary.added); assertEquals(0, summary.removed); assertTrue(summary.details.isEmpty());
+        CatalogDiff.Summary conservative = CatalogDiff.compare(before, after, Collections.singletonMap("pg8", 9));
+        assertEquals(1, conservative.changed); assertEquals(1, conservative.pageChanged);
+        assertTrue(conservative.describe().contains("未核实物理页"));
+    }
+
+    @Test public void verifiedNativeTargetsKeepOccurrenceIndicesAndKnownPhysicalPages() {
+        byte[] before = catalog(nativeNode("甲", 8) + "," + nativeNode("乙", 9));
+        byte[] after = catalog(nativeNode("甲", 8) + "," + node("乙", "pg12", ""));
+        Map<Integer, String> nativeIds = new HashMap<>(); nativeIds.put(8, "pg8"); nativeIds.put(9, "pg9");
+        Map<String, Integer> known = new HashMap<>(); known.put("pg8", 9); known.put("pg9", 10); known.put("pg12", 13);
+        CatalogDiff.Summary summary = CatalogDiff.compare(before, after, known, nativeIds);
+        assertEquals(1, summary.unchanged); assertEquals(1, summary.changed); assertEquals(1, summary.pageChanged);
+        assertEquals(Collections.singletonList(13), summary.targetPages);
+        assertEquals(1, summary.changes.get(0).beforeIndex); assertEquals(1, summary.changes.get(0).afterIndex);
+        assertTrue(summary.details.get(0).contains("PDF 第 10 页（页 ID：pg9）"));
+        assertTrue(summary.details.get(0).contains("PDF 第 13 页（页 ID：pg12）"));
+        CatalogDiff.Summary removed = CatalogDiff.compare(before, catalog(""), known, nativeIds);
+        assertEquals(Arrays.asList(9, 10), removed.targetPages);
+    }
+
+    @Test public void missingNativeContextNeverGuessesAndLiteralIdsCannotCollideWithNativeKeys() {
+        CatalogDiff.Summary summary = CatalogDiff.compare(catalog(nativeNode("章", 8)), catalog(node("章", "native:8", "")),
+                Collections.singletonMap("native:8", 99), Collections.emptyMap());
+        assertEquals(1, summary.changed); assertEquals(1, summary.pageChanged);
+        assertEquals(Collections.singletonList(99), summary.targetPages);
+        assertTrue(summary.describe().contains("未核实物理页"));
+        CatalogDiff.Summary unresolved = CatalogDiff.compare(catalog(nativeNode("章", 8)), catalog(nativeNode("章", 9)),
+                Collections.singletonMap("pg8", 9), Collections.singletonMap(8, "pg8"));
+        assertEquals(1, unresolved.changed); assertEquals(Collections.singletonList(0), unresolved.targetPages);
+        assertTrue(unresolved.describe().contains("PDF 第 9 页（页 ID：pg8）"));
+        assertTrue(unresolved.describe().contains("原页索引：9"));
+    }
 }

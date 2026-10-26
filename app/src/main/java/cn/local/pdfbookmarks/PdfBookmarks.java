@@ -46,6 +46,19 @@ public final class PdfBookmarks {
         }
     }
 
+    /** A generated PDF whose structure, original byte prefix and complete digest were verified. */
+    public static final class VerifiedOutput {
+        public final File file;
+        public final long length;
+        public final String sha256;
+
+        private VerifiedOutput(File file, long length, String sha256) {
+            this.file = file;
+            this.length = length;
+            this.sha256 = sha256;
+        }
+    }
+
     /** 已有书签的目的地无法解析时 pdfPage 为 0，仅用于预览和默认跳过判断。 */
     public static Info inspect(File input) throws IOException {
         requireInput(input);
@@ -58,6 +71,12 @@ public final class PdfBookmarks {
     /** replaceExisting=false 时，检测到任何已有书签即拒绝，不创建输出。 */
     public static void write(File input, File output, List<TocParser.Row> rows,
                              boolean replaceExisting) throws IOException {
+        writeVerified(input, output, rows, replaceExisting);
+    }
+
+    /** The returned digest can be checked while copying; it does not authorize skipping destination readback. */
+    public static VerifiedOutput writeVerified(File input, File output, List<TocParser.Row> rows,
+                                                boolean replaceExisting) throws IOException {
         requireInput(input);
         if (output == null || input.getCanonicalFile().equals(output.getCanonicalFile())) {
             throw new IOException("输出必须是独立的新 PDF 文件，不能覆盖原件。");
@@ -98,14 +117,12 @@ public final class PdfBookmarks {
                     throw new IOException("输出未通过页数、标题、层级和目标页码核验。");
                 }
             }
-            if (output.length() <= originalSize
-                    || !Arrays.equals(originalHash, hash(output, originalSize))) {
-                throw new IOException("增量保存未保留原 PDF 的完整字节前缀。");
-            }
+            VerifiedOutput verified = verifyOutput(output, originalSize, originalHash);
             if (input.length() != originalSize
                     || !Arrays.equals(originalHash, hash(input, originalSize))) {
                 throw new IOException("处理期间原 PDF 已变化，请重新选择和预览。");
             }
+            return verified;
         } catch (IOException | RuntimeException failure) {
             if (created) {
                 try { Files.deleteIfExists(output.toPath()); }
@@ -113,6 +130,31 @@ public final class PdfBookmarks {
             }
             throw failure;
         }
+    }
+
+    /** Reads the closed output once for both the preserved-prefix check and its full SHA-256. */
+    private static VerifiedOutput verifyOutput(File output, long originalSize, byte[] originalHash) throws IOException {
+        long expectedLength = output.length();
+        if (expectedLength <= originalSize) throw new IOException("增量保存未保留原 PDF 的完整字节前缀。");
+        MessageDigest prefix = sha256(), complete = sha256();
+        long length = 0;
+        try (InputStream input = Files.newInputStream(output.toPath())) {
+            byte[] buffer = new byte[64 * 1024];
+            for (int count; (count = input.read(buffer)) != -1;) {
+                complete.update(buffer, 0, count);
+                if (length < originalSize) prefix.update(buffer, 0, (int) Math.min(count, originalSize - length));
+                length += count;
+            }
+        }
+        if (length != expectedLength || output.length() != length) throw new IOException("生成的 PDF 长度在校验时变化。");
+        if (length <= originalSize || !Arrays.equals(originalHash, prefix.digest())) {
+            throw new IOException("增量保存未保留原 PDF 的完整字节前缀。");
+        }
+        StringBuilder checksum = new StringBuilder(64);
+        for (byte value : complete.digest()) {
+            checksum.append(Character.forDigit((value >>> 4) & 15, 16)).append(Character.forDigit(value & 15, 16));
+        }
+        return new VerifiedOutput(output.getCanonicalFile(), length, checksum.toString());
     }
 
     private static void requireInput(File input) throws IOException {
@@ -225,9 +267,7 @@ public final class PdfBookmarks {
     }
 
     private static byte[] hash(File file, long bytes) throws IOException {
-        MessageDigest digest;
-        try { digest = MessageDigest.getInstance("SHA-256"); }
-        catch (NoSuchAlgorithmException impossible) { throw new IOException(impossible); }
+        MessageDigest digest = sha256();
         try (InputStream input = Files.newInputStream(file.toPath())) {
             byte[] buffer = new byte[64 * 1024];
             long remaining = bytes;
@@ -239,5 +279,10 @@ public final class PdfBookmarks {
             }
         }
         return digest.digest();
+    }
+
+    private static MessageDigest sha256() throws IOException {
+        try { return MessageDigest.getInstance("SHA-256"); }
+        catch (NoSuchAlgorithmException impossible) { throw new IOException(impossible); }
     }
 }

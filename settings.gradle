@@ -7,3 +7,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = 'Zotero_PDF_Bookmarks_Android'
 include ':app'
+if (providers.gradleProperty('fixtureTests').orNull == 'true') include ':share-fixture'

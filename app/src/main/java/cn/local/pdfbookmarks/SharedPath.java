@@ -9,10 +9,17 @@ import java.util.Set;
 /** 共享存储路径提示的纯 Java 解析；只生成文档 ID，不读取文件、不授予权限。 */
 public final class SharedPath {
     private static final Set<String> SHARED_FOLDERS = new HashSet<>(Arrays.asList(
-            "享做笔记", "Download", "Downloads", "Documents", "Books", "DCIM", "Pictures",
+            "享做笔记", "Download", "Downloads", "Documents", "Books", "Android", "DCIM", "Pictures",
             "Music", "Movies", "Podcasts", "Ringtones", "Alarms", "Notifications", "Audiobooks"));
 
     private SharedPath() {}
+
+    /** A system-restricted raw path cannot be repaired by asking for another folder grant. */
+    public static final class RestrictedPathException extends IllegalArgumentException {
+        private RestrictedPathException() {
+            super("系统不允许本工具浏览 Android/data 或 Android/obb；显示隐藏文件或再次授权文件夹也无法解除限制。");
+        }
+    }
 
     public static String documentId(String input) {
         if (input == null || input.trim().isEmpty()) throw invalid("请粘贴 PDF 或 JSON 的共享存储路径。");
@@ -58,7 +65,7 @@ public final class SharedPath {
         }
         if (segments.length >= 2 && segments[0].equalsIgnoreCase("Android")
                 && (segments[1].equalsIgnoreCase("data") || segments[1].equalsIgnoreCase("obb"))) {
-            throw invalid("Android/data 和 Android/obb 属于受限制目录，请将文件放到共享文档文件夹后重新选择。");
+            throw new RestrictedPathException();
         }
         return "primary:" + path;
     }

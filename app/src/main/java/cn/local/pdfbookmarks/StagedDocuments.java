@@ -10,8 +10,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** 在已持久授权的目录中创建暂存文件和改名；绝不打开已有文档的截断写入流。 */
@@ -67,6 +70,29 @@ public final class StagedDocuments implements StagedReplacement.Provider {
         return found;
     }
 
+    /** One fresh listing for a read-only group; duplicates and missing names remain explicit. */
+    public Map<String, List<StagedReplacement.Document>> findAll(List<String> names) throws IOException {
+        Set<String> requested = new HashSet<>(names);
+        List<StagedReplacement.Document> listed = new ArrayList<>();
+        for (Entry item : children()) if (requested.contains(item.name)) listed.add(document(item));
+        return indexByName(listed, names);
+    }
+
+    static Map<String, List<StagedReplacement.Document>> indexByName(
+            List<StagedReplacement.Document> listed, List<String> names) {
+        Map<String, List<StagedReplacement.Document>> grouped = new LinkedHashMap<>();
+        for (String name : names) grouped.computeIfAbsent(name, ignored -> new ArrayList<>());
+        for (StagedReplacement.Document document : listed) {
+            List<StagedReplacement.Document> matches = grouped.get(document.name);
+            if (matches != null) matches.add(document);
+        }
+        Map<String, List<StagedReplacement.Document>> result = new LinkedHashMap<>();
+        for (Map.Entry<String, List<StagedReplacement.Document>> entry : grouped.entrySet()) {
+            result.put(entry.getKey(), Collections.unmodifiableList(entry.getValue()));
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
     @Override public StagedReplacement.Document create(String name) throws IOException {
         Set<String> oldIds = new HashSet<>();
         for (Entry item : children()) {
@@ -91,7 +117,7 @@ public final class StagedDocuments implements StagedReplacement.Provider {
         if (!document.name.equals(item.name)) throw new IOException("文件名称在处理期间发生变化，停止读取。");
         InputStream stream = resolver.openInputStream(uri(item.id));
         if (stream == null) throw new IOException("文件提供者未返回读取流。");
-        return stream;
+        return WorkMetrics.providerRead(stream);
     }
 
     @Override public OutputStream openWriteNew(StagedReplacement.Document document) throws IOException {
@@ -134,6 +160,7 @@ public final class StagedDocuments implements StagedReplacement.Provider {
     private List<Entry> children() throws IOException {
         Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(folder, DocumentsContract.getDocumentId(folder));
         List<Entry> items = new ArrayList<>();
+        WorkMetrics.directoryQuery();
         try (Cursor cursor = resolver.query(children, COLUMNS, null, null, null)) {
             if (cursor == null) throw new IOException("无法列出授权文件夹，停止处理。");
             while (cursor.moveToNext()) items.add(entry(cursor));
@@ -146,15 +173,57 @@ public final class StagedDocuments implements StagedReplacement.Provider {
         String id;
         try { id = DocumentsContract.getDocumentId(document); }
         catch (IllegalArgumentException e) { throw new IOException("文档地址无效。", e); }
-        for (Entry item : children()) if (id.equals(item.id)) return item;
-        throw new IOException("文档不在授权原文件夹中，或已被移动/删除。");
+        Uri exact = uri(id);
+        return currentChild(DocumentsContract.getTreeDocumentId(folder),
+                DocumentsContract.getDocumentId(folder), id, new ChildLookup() {
+                    public List<String> path() throws IOException {
+                        DocumentsContract.Path path = DocumentsContract.findDocumentPath(resolver, exact);
+                        return path == null ? null : path.getPath();
+                    }
+                    public Entry metadata() throws IOException { return StagedDocuments.this.metadata(exact); }
+                    public Entry listed() throws IOException {
+                        for (Entry item : children()) if (id.equals(item.id)) return item;
+                        throw new IOException("文档不在授权原文件夹中，或已被移动/删除。");
+                    }
+                });
+    }
+
+    interface ChildLookup {
+        List<String> path() throws IOException;
+        Entry metadata() throws IOException;
+        Entry listed() throws IOException;
+    }
+
+    /** Proves the immediate parent afresh; a descendant or cached path is insufficient. */
+    static Entry currentChild(String treeId, String folderId, String id, ChildLookup lookup) throws IOException {
+        final List<String> path;
+        try { path = lookup.path(); }
+        catch (UnsupportedOperationException unsupported) { return lookup.listed(); }
+        if (path == null) return lookup.listed();
+        if (path.isEmpty() || !treeId.equals(path.get(0)) || !id.equals(path.get(path.size() - 1))
+                || path.contains(null)) {
+            throw new IOException("文件提供者返回的文档路径与授权身份不一致。");
+        }
+        // A provider may choose another canonical path for a document with several parents.
+        if (path.size() < 2 || !folderId.equals(path.get(path.size() - 2))) return lookup.listed();
+        Entry current = lookup.metadata();
+        if (current == null || !id.equals(current.id)) throw new IOException("文档标识在读取期间发生变化。");
+        return current;
     }
 
     private Entry metadata(Uri document) throws IOException {
+        List<Entry> entries = new ArrayList<>(2);
         try (Cursor cursor = resolver.query(document, COLUMNS, null, null, null)) {
-            if (cursor == null || !cursor.moveToFirst()) throw new IOException("无法读取文件夹信息。");
-            return entry(cursor);
+            if (cursor != null) while (entries.size() < 2 && cursor.moveToNext()) entries.add(entry(cursor));
         }
+        return singleMetadata(DocumentsContract.getDocumentId(document), entries);
+    }
+
+    static Entry singleMetadata(String id, List<Entry> entries) throws IOException {
+        if (entries.size() != 1 || !id.equals(entries.get(0).id)) {
+            throw new IOException("文件提供者未返回唯一且身份一致的文档信息。");
+        }
+        return entries.get(0);
     }
 
     private Uri uri(String id) { return DocumentsContract.buildDocumentUriUsingTree(folder, id); }
@@ -169,7 +238,7 @@ public final class StagedDocuments implements StagedReplacement.Provider {
         if (id == null || name == null || mime == null || cursor.isNull(3)) throw new IOException("文件提供者返回的文档信息不完整。");
         return new Entry(id, name, mime, cursor.getInt(3));
     }
-    private static final class Entry {
+    static final class Entry {
         final String id, name, mime;
         final int flags;
         Entry(String id, String name, String mime, int flags) {

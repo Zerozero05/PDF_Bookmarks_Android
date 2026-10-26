@@ -90,6 +90,26 @@ public class EnjoyCatalogTest {
         catch (IOException expected) { assertFalse(expected.getMessage().isEmpty()); }
     }
 
+    private static JsonObject nativeNode(String title, int page) {
+        JsonObject node = node(title, "");
+        node.addProperty("page", page);
+        return node;
+    }
+
+    private static EnjoyCatalog.Plan nativeMerge(Fixture fixture, boolean replace, TocParser.Row... rows) throws IOException {
+        return EnjoyCatalog.mergeNativePdfBookmarks(bytes(fixture.catalog), bytes(fixture.pageids), bytes(fixture.doc),
+                PDF, 10, Arrays.asList(rows), replace);
+    }
+
+    private static void rejectedNative(Fixture fixture) {
+        byte[] before = bytes(fixture.catalog), ids = bytes(fixture.pageids), doc = bytes(fixture.doc);
+        try { nativeMerge(fixture, false, row(1, "新目录", 3)); fail("未核实的原生目录被接受"); }
+        catch (IOException expected) { assertFalse(expected.getMessage().isEmpty()); }
+        assertArrayEquals(before, bytes(fixture.catalog));
+        assertArrayEquals(ids, bytes(fixture.pageids));
+        assertArrayEquals(doc, bytes(fixture.doc));
+    }
+
     @Test public void preservesManualTreesUnknownFieldsAndNativeRootValues() throws Exception {
         Fixture fixture = new Fixture();
         JsonObject manual = node("我的笔记", "pg3");
@@ -511,5 +531,127 @@ public class EnjoyCatalogTest {
         EnjoyCatalog.Plan second = EnjoyCatalog.merge(first.json, pageids, doc, pdfPath, pageCount, rows);
         assertEquals(0, second.addedCount);
         assertArrayEquals(first.json, second.json);
+    }
+
+    @Test public void nativeEntryPreservesAllOldFieldsHierarchyAndManualNodes() throws Exception {
+        Fixture fixture = new Fixture();
+        JsonObject chapter = nativeNode("章", 1), section = nativeNode("旧节", 2), manual = node("手动", "pg8");
+        chapter.addProperty("dirty", true); chapter.addProperty("expand", true); chapter.addProperty("usn", 77);
+        chapter.add("userData", JsonParser.parseString("{\"zoom\":1.00000,\"nullable\":null}"));
+        section.addProperty("usn", 31);
+        chapter.getAsJsonArray("kids").add(section);
+        fixture.catalog.getAsJsonArray("kids").add(chapter);
+        fixture.catalog.getAsJsonArray("kids").add(manual);
+        fixture.catalog.addProperty("extra", "原根状态");
+        byte[] catalog = bytes(fixture.catalog), ids = bytes(fixture.pageids), doc = bytes(fixture.doc);
+        TocParser.Row[] rows = {row(1, "章", 2), row(2, "旧节", 3), row(2, "新节", 4), row(1, "后章", 6)};
+        EnjoyCatalog.Plan plan = nativeMerge(fixture, false, rows);
+        assertEquals(3, plan.originalCount); assertEquals(2, plan.addedCount); assertEquals(5, plan.totalCount);
+        assertFalse(plan.replacesExisting);
+        JsonObject result = output(plan), merged = result.getAsJsonArray("kids").get(0).getAsJsonObject();
+        for (String key : chapter.keySet()) if (!key.equals("kids")) assertEquals(chapter.get(key), merged.get(key));
+        for (String key : fixture.catalog.keySet()) if (!key.equals("kids")) assertEquals(fixture.catalog.get(key), result.get(key));
+        assertEquals(section, merged.getAsJsonArray("kids").get(0));
+        assertEquals(manual, result.getAsJsonArray("kids").get(1));
+        assertEquals("pg3", merged.getAsJsonArray("kids").get(1).getAsJsonObject().get("pageId").getAsString());
+        assertEquals(-1, merged.getAsJsonArray("kids").get(1).getAsJsonObject().get("page").getAsInt());
+        assertEquals(2, plan.nativePageIds.size());
+        assertEquals("pg1", plan.nativePageIds.get(1)); assertEquals("pg2", plan.nativePageIds.get(2));
+        assertThrows(UnsupportedOperationException.class, () -> plan.nativePageIds.put(3, "other"));
+        assertArrayEquals(catalog, bytes(fixture.catalog)); assertArrayEquals(ids, bytes(fixture.pageids));
+        assertArrayEquals(doc, bytes(fixture.doc));
+        EnjoyCatalog.Plan repeat = EnjoyCatalog.mergeNativePdfBookmarks(plan.json, ids, doc, PDF, 10, Arrays.asList(rows), false);
+        assertEquals(0, repeat.addedCount); assertArrayEquals(plan.json, repeat.json);
+    }
+
+    @Test public void nativeFormatRequiresExplicitEntryAndKeepsUnimportedNativeBookmarks() throws Exception {
+        Fixture fixture = new Fixture();
+        fixture.catalog.getAsJsonArray("kids").add(nativeNode("原生章", 1));
+        rejected(fixture, row(1, "原生章", 2));
+        EnjoyCatalog.Plan same = nativeMerge(fixture, false, row(1, "原生章", 2));
+        assertEquals(0, same.addedCount); assertArrayEquals(bytes(fixture.catalog), same.json);
+        assertEquals("pg1", same.nativePageIds.get(1));
+        EnjoyCatalog.Plan omitted = nativeMerge(fixture, false, row(1, "新章", 3));
+        assertEquals(fixture.catalog.getAsJsonArray("kids").get(0), output(omitted).getAsJsonArray("kids").get(0));
+        assertEquals(2, omitted.totalCount);
+        Fixture ordinary = new Fixture();
+        assertTrue(ordinary.merge(row(1, "章", 2)).nativePageIds.isEmpty());
+    }
+
+    @Test public void nativeSameTitleDifferentTargetsAreDistinctAndCrossFormatDuplicatesAreRejected() throws Exception {
+        Fixture fixture = new Fixture();
+        fixture.catalog.getAsJsonArray("kids").add(nativeNode("同名章", 1));
+        EnjoyCatalog.Plan plan = nativeMerge(fixture, false, row(1, "同名章", 3));
+        assertEquals(1, plan.addedCount); assertEquals(2, plan.totalCount);
+        fixture.catalog.getAsJsonArray("kids").add(node("同名章", "pg1"));
+        byte[] before = bytes(fixture.catalog);
+        try { nativeMerge(fixture, false, row(1, "同名章", 2)); fail(); }
+        catch (IOException expected) { assertTrue(expected.getMessage().contains("相同标题")); }
+        assertArrayEquals(before, bytes(fixture.catalog));
+    }
+
+    @Test public void nativeReplacementChangesOnlyRootKidsAndRetainsVerifiedDiffContext() throws Exception {
+        Fixture fixture = new Fixture();
+        fixture.catalog.getAsJsonArray("kids").add(nativeNode("原生章", 1));
+        fixture.catalog.add("userData", JsonParser.parseString("{\"scale\":1.00000,\"nullable\":null}"));
+        byte[] original = bytes(fixture.catalog);
+        TocParser.Row[] rows = {row(1, "新章", 3), row(2, "新节", 4)};
+        EnjoyCatalog.Plan plan = nativeMerge(fixture, true, rows);
+        assertTrue(plan.replacesExisting); assertEquals(1, plan.originalCount);
+        assertEquals(2, plan.addedCount); assertEquals(2, plan.totalCount);
+        assertEquals("pg1", plan.nativePageIds.get(1));
+        JsonObject result = output(plan);
+        for (String key : fixture.catalog.keySet()) if (!key.equals("kids")) assertEquals(fixture.catalog.get(key), result.get(key));
+        assertEquals("pg2", result.getAsJsonArray("kids").get(0).getAsJsonObject().get("pageId").getAsString());
+        assertArrayEquals(original, bytes(fixture.catalog));
+        EnjoyCatalog.Plan repeat = EnjoyCatalog.mergeNativePdfBookmarks(plan.json, bytes(fixture.pageids), bytes(fixture.doc),
+                PDF, 10, Arrays.asList(rows), true);
+        assertEquals(0, repeat.addedCount); assertArrayEquals(plan.json, repeat.json);
+        assertTrue(repeat.nativePageIds.isEmpty());
+    }
+
+    @Test public void nativeEntryRejectsInvalidEmptyIdPagesAndNonStringIds() {
+        for (String value : new String[]{"\"1\"", "1.0", "1e0", "true", "null", "-1", "-2", "10", "2147483648"}) {
+            Fixture fixture = new Fixture(); JsonObject nativeNode = nativeNode("原生章", 1);
+            nativeNode.add("page", JsonParser.parseString(value)); fixture.catalog.getAsJsonArray("kids").add(nativeNode);
+            rejectedNative(fixture);
+        }
+        for (String value : new String[]{"null", "1", "true", "\"\\u0000\""}) {
+            Fixture fixture = new Fixture(); JsonObject nativeNode = nativeNode("原生章", 1);
+            nativeNode.add("pageId", JsonParser.parseString(value)); fixture.catalog.getAsJsonArray("kids").add(nativeNode);
+            rejectedNative(fixture);
+        }
+        for (String field : new String[]{"page", "pageId"}) {
+            Fixture fixture = new Fixture(); JsonObject nativeNode = nativeNode("原生章", 1);
+            nativeNode.remove(field); fixture.catalog.getAsJsonArray("kids").add(nativeNode); rejectedNative(fixture);
+        }
+    }
+
+    @Test public void nativeEntryRejectsMissingWrongAndAmbiguousMappingsEvenForUnimportedOldNodes() {
+        for (int scenario = 0; scenario < 8; scenario++) {
+            Fixture fixture = new Fixture(); fixture.catalog.getAsJsonArray("kids").add(nativeNode("原生章", 1));
+            JsonObject info = fixture.infos.get(1).getAsJsonObject();
+            if (scenario == 0) info.addProperty("document", "");
+            if (scenario == 1) info.addProperty("document", PDF.replace("book.pdf", "other.pdf"));
+            if (scenario == 2) fixture.pages.get(1).getAsJsonObject().addProperty("index", 5);
+            if (scenario == 3) fixture.pages.remove(1);
+            if (scenario == 4) fixture.infos.add(info.deepCopy());
+            if (scenario == 5) fixture.pages.add(fixture.pages.get(1).deepCopy());
+            if (scenario == 6) {
+                fixture.infos.get(3).getAsJsonObject().addProperty("docIndex", 1);
+                fixture.pages.get(3).getAsJsonObject().addProperty("index", 1);
+            }
+            if (scenario == 7) info.addProperty("docIndex", "1");
+            rejectedNative(fixture);
+        }
+    }
+
+    @Test public void nativeFirstPageNeedsExplicitSelectedPdfLinkInsteadOfOriginGuess() throws Exception {
+        Fixture fixture = new Fixture(); fixture.catalog.getAsJsonArray("kids").add(nativeNode("封面", 0));
+        rejectedNative(fixture);
+        fixture.infos.get(0).getAsJsonObject().addProperty("document", PDF);
+        EnjoyCatalog.Plan plan = nativeMerge(fixture, false, row(1, "封面", 1));
+        assertEquals(0, plan.addedCount); assertEquals("pg0", plan.nativePageIds.get(0));
+        assertArrayEquals(bytes(fixture.catalog), plan.json);
     }
 }
