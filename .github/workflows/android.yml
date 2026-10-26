@@ -19,9 +19,45 @@ jobs:
           packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
       - name: Prepare SDK
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+        run: sdkmanager 'platforms;android-35' 'build-tools;36.0.0'
+      - name: Verify bundled license sources
+        shell: pwsh
+        run: |
+          & ./scripts/collect-third-party-assets.ps1 -JavaExecutable (Join-Path $env:JAVA_HOME 'bin/java')
+          git diff --exit-code -- licenses app/src/main/assets/licenses
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled license sources differ from the verified artifacts.' }
       - name: Build, lint and all unit tests
         run: bash gradlew assembleDebug lintDebug testDebugUnitTest --no-daemon --console=plain
+      - name: Prepare independent PDF verifier
+        run: |
+          python3 -m venv "$RUNNER_TEMP/pdf-engine-venv"
+          "$RUNNER_TEMP/pdf-engine-venv/bin/python" -m pip install --require-hashes --only-binary=:all: --no-deps -r testengine/requirements.txt
+      - name: Independent PDF engine checks (synthetic inputs)
+        shell: pwsh
+        run: |
+          & ./testengine/run.ps1 -JavaHome $env:JAVA_HOME -Python (Join-Path $env:RUNNER_TEMP 'pdf-engine-venv/bin/python')
+      - name: Summarize unit test results
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, xml.etree.ElementTree as ET
+          files = sorted(pathlib.Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
+          suites = []
+          for path in files:
+              root = ET.parse(path).getroot()
+              suites.append({"name": root.attrib["name"], **{
+                  key: int(root.attrib.get(key, 0)) for key in ("tests", "failures", "errors", "skipped")
+              }})
+          totals = {key: sum(suite[key] for suite in suites) for key in ("tests", "failures", "errors", "skipped")}
+          report = {"status": "executed" if files else "not-executed", "totals": totals, "suites": suites}
+          target = pathlib.Path("verification")
+          target.mkdir(exist_ok=True)
+          (target / "unit-test-summary.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+          print("UNIT_TEST_SUMMARY " + json.dumps(report))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("Unit tests: " + json.dumps(totals) + "\n")
+              summary.write("Private book/note fixtures and device tests are not run by this CI.\n")
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -32,4 +68,8 @@ jobs:
             app/build/reports/tests/testDebugUnitTest/
             app/build/reports/lint-results-debug.*
             app/build/test-results/testDebugUnitTest/TEST-*.xml
+            verification/unit-test-summary.json
+            verification/pdf-engine-host.log
+            verification/pdf-engine-independent.json
+            verification/pdf-engine-pypdf.log
           retention-days: 14
