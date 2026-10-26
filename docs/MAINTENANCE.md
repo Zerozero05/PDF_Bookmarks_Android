@@ -4,7 +4,7 @@
 
 ## v1.4.2 分享输入与保存性能维护
 
-1.4.2／code19为已完成本地修复的未发布候选，正式下载仍为v1.4.0；本轮未公开发布或清理电脑文件。[完整记录](../CHANGELOG.md#v1-4-2)与[用法](USER_GUIDE.md#v142-json-输入与保存)同步维护；旧段落保持当时行为，不覆盖本次经确认的默认值。
+1.4.2／code19已正式发布为Latest，Release424770647，保留原程序和五附件字节；公开下载、标签源码及旧版本保持的独立核验已通过，详见[正式记录](../VALIDATION.md#formal-v142-2026-10-27)。[完整记录](../CHANGELOG.md#v1-4-2)与[用法](USER_GUIDE.md#v142-json-输入与保存)同步维护；旧段落保持当时行为，不覆盖本次经确认的默认值。
 
 `JsonInputRef`将源URI／名称／哈希与本工具UUID分开，`JsonInputStore`只管理 `files/imports/json` 对应输入及元数据。确认前实际读取并严格校验4MB／UTF-8／JSON，确认后提交文件对和副本ID，失败、取消与旧回调不覆盖有效选择。InputSelectionCommit核实commit失败后的内存与持久状态，确认原字段恢复后才释放未使用副本，无法确定归属则保留。ReviewDraft v1原14字段及严格解析保持，恢复按源身份和哈希核实副本，不恢复核对许可；副本名称显示不再访问失效源，刷新授权不改变绑定。SecurityException与FileNotFoundException在主提示提供重新分享／Download恢复，详情保留实际原因，不向单文件分享循环请求Android/data。
 
@@ -20,7 +20,7 @@ PreparedOutput和享做准备结果只在同次流程的URI／哈希／完整目
 
 ## v1.4.0 流程与界面维护
 
-当前正式版1.4.0／code17，Release422299598为Latest；标签b1055a3c8a8b8906c61a0957477edd1b0d507a4d及原签名五附件已公开实读，main同候选tree合并并通过CI。正式说明见[记录](../VALIDATION.md#formal-v140-2026-10-24)，实现与边界见[完整日志](../CHANGELOG.md#v1-4-0)；旧版本段落保留为历史。
+历史v1.4.0／code17发行时，Release422299598为当时Latest；标签b1055a3c8a8b8906c61a0957477edd1b0d507a4d及原签名五附件已公开实读，main同候选tree合并并通过CI。正式说明见[记录](../VALIDATION.md#formal-v140-2026-10-24)，实现与边界见[完整日志](../CHANGELOG.md#v1-4-0)；旧版本段落保留为历史。
 
 `TaskOutcome.AWAITING_USER`表示已生成而尚未保存，不能把取消保存记为完成；`RECOVERY_REQUIRED`与既有pending记录共同阻止新写入。生成前预检只读取源哈希、提供者元数据与享做准备快照，不试写、不改名、不探测删除；正式事务仍需重新验证，预检不能保证提供者之后一定允许操作。
 
