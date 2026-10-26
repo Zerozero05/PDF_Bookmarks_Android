@@ -14,6 +14,7 @@
     <string name="picker_scope_hint">只显示已授权的文件夹和匹配文件。未选文件也能随时取消，原来的选择保留。</string>
     <string name="picker_authorize_folder">添加文件夹授权…</string>
     <string name="picker_more_sources">更多文件来源（系统）…</string>
+    <string name="picker_download_sources">下载 / 最近文件（系统）…</string>
     <string name="picker_no_locations">还没有可用位置。可添加文件夹授权，或选择更多文件来源。</string>
     <string name="picker_no_files">这个文件夹没有匹配文件。可返回上级或取消选择。</string>
     <string name="picker_choose_hint">点击文件夹进入；点击文件完成选择。</string>

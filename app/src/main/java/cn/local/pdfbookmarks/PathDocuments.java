@@ -157,6 +157,7 @@ public final class PathDocuments {
 
     private static String documentId(String input) throws IOException {
         try { return SharedPath.documentId(input); }
+        catch (SharedPath.RestrictedPathException e) { throw e; }
         catch (IllegalArgumentException e) { throw new IOException(e.getMessage(), e); }
     }
 }

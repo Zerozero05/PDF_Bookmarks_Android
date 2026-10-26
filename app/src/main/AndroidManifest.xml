@@ -22,6 +22,13 @@
                 <data android:mimeType="text/json" />
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="text/json" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>

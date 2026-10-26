@@ -155,7 +155,7 @@ final class FilePickerDialog extends Dialog {
         TextView hint=text(getContext().getString(R.string.picker_scope_hint),13);hint.setTextColor(appearance.secondaryText);
         hint.setPadding(0,space(12),0,space(6));shell.addView(hint);
         authorize=action(getContext().getString(R.string.picker_authorize_folder),()->{if(!revoking){dismiss();authorizeFolder.run();}});shell.addView(authorize);
-        systemSource=action(getContext().getString(R.string.picker_more_sources),()->{if(!revoking){dismiss();systemPicker.run();}});shell.addView(systemSource);
+        systemSource=action(getContext().getString(pdf?R.string.picker_more_sources:R.string.picker_download_sources),()->{if(!revoking){dismiss();systemPicker.run();}});shell.addView(systemSource);
         setContentView(shell);setCancelable(true);setCanceledOnTouchOutside(true);
         setOnCancelListener(dialog->cancelled.run());
         setOnDismissListener(dialog->{

@@ -68,6 +68,12 @@ Main以正在读取／生成／保存／分享识别／系统选择和待PDF／�
 
 `SharedImport`处理分享的明确PDF／JSON内容URI，Activity在用户确认后才改变输入，保留其他输入选择入口。不接受网络URL、file路径或含多个同类型文档的模糊组合；临时只读授权不等于持久授权，也不等于tree创建／改名授权。不得让分享Intent绕过核对或触发生成、替换、目录同步和删除。来源权限失效应提示重选，不清应用数据。
 
+v1.4.1候选将JSON的`ACTION_VIEW`接入相同文件确认边界，系统单文件选择用`EXTRA_INITIAL_URI`提示`Download`。原始共享路径中的`Android/data`／`obb`受系统限制，不能显示为可通过再次tree授权解决；明确来源应用分享的合法content URI仍由真实授权和读取校验决定。不得为此增加全盘权限、将临时读授权当作持久授权，或更改PDF替换权限。仅参考Android官方[文档限制](https://developer.android.com/about/versions/11/privacy/storage#document-access-restrictions)、[文件选择接口](https://developer.android.com/training/data-storage/shared/documents-files)及[安全单文件分享](https://developer.android.com/training/secure-file-sharing/share-file)，没有新增外部代码或运行依赖。
+
+享做原生PDF目录的空`pageId`适配使用显式模型入口，原严格入口契约和旧断言保留。非负整数`page`必须在实际页数范围内，并经当前document的docIndex与doc.pages唯一交叉映射；只在匹配／差异中解析目标，不改已有节点字段。无native上下文的差异预览不能猜测跳转页，未知映射仍停止。合并幂等、不同页不折叠、替换模式、坏输入及原严格入口需要分别回归；模型测试和只读预检不能当作真实笔记事务成功。
+
+本次最终电脑结果343项中340通过／0失败／3项指定fixture缺失跳过，lint0错误／25既有警告；未传旧mixedFixture导致3跳过，不改写历史2跳过结果。最终1.4.1／code18按原签名保留数据安装，UID10229／首次时间保持。专用 `StartupSmoke -e readOnly141 true`只读runner全部通过，默认完整runner保留：实际238页PDF／39条JSON的两模式prepare与diff、合法JSON VIEW取消、Download初始URI及受限路径不发TREE均验证；四组偏好／授权flags／草稿、93份关联文件SHA保持，无文件增减。没有执行apply、生成、删除或备份，来源QQ／文件管理器实际URI发送及本轮真实保存仍未验；测试组件目前仍装，不宣称已移除。APK绑定与完整范围见[本次日志](../CHANGELOG.md#v1-4-1)，本轮未公开发布或本机清理。
+
 界面保持文件、核对、结果三个区域及底部主操作；概要、完整路径、差异和行详情按需展开。返回先处理当前输入或视图层次，真正写入阶段保持原恢复保护；读取取消仍使用旧回调令牌隔离。结果自动定位和文件区收起不能隐藏待恢复入口、保存重试或唯一清理入口，也不能改变任何状态判定。
 
 方法参考Android官方[状态恢复](https://developer.android.com/topic/libraries/architecture/saving-states)与[接收分享](https://developer.android.com/training/sharing/receive)，按既有Gson与原生Views实现；没有新增外部代码或运行依赖。应分别验证纯模型、持久层、进程重启、临时授权和实际触摸，不能用序列化往返或编译通过代替设备端到端结果。

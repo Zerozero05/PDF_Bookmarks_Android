@@ -67,8 +67,8 @@ public final class EnjoyDirectorySync {
             this.physicalPages = physicalPages;
         }
         /** Read-only comparison of the exact snapshots already validated by prepare(). */
-        public String describePreview() { return CatalogDiff.compare(original, plan.json, physicalPages).describe(); }
-        public CatalogDiff.Summary previewChanges() { return CatalogDiff.compare(original, plan.json, physicalPages); }
+        public String describePreview() { return previewChanges().describe(); }
+        public CatalogDiff.Summary previewChanges() { return CatalogDiff.compare(original, plan.json, physicalPages, plan.nativePageIds); }
     }
 
     private static final class Pending {
@@ -125,7 +125,7 @@ public final class EnjoyDirectorySync {
         byte[] pageids = snapshot(documents, "pageids.json", false, snapshots);
         snapshot(documents, "page_usn.json", true, snapshots);
         snapshot(documents, "catalog.json.temp", true, snapshots);
-        EnjoyCatalog.Plan plan = EnjoyCatalog.merge(original, pageids, doc,
+        EnjoyCatalog.Plan plan = EnjoyCatalog.mergeNativePdfBookmarks(original, pageids, doc,
                 "/storage/emulated/0/" + id.substring(8), actualPages, rows, replaceExisting);
         verifySnapshots(documents, snapshots, false);
         checkedPdf(documents, name, expectedPdfHash);

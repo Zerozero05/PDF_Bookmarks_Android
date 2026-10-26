@@ -19,13 +19,16 @@ import java.util.concurrent.atomic.AtomicReference;
 /** Device-only smoke runner; document processing is confined to new synthetic cache inputs. */
 public final class StartupSmoke extends Instrumentation {
     private static final long RECREATE_TIMEOUT_MS = 10000;
+    private boolean readOnly141;
 
     @Override public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
+        readOnly141 = arguments != null && "true".equalsIgnoreCase(arguments.getString("readOnly141"));
         start();
     }
 
     @Override public void onStart() {
+        if (readOnly141) { Import141Smoke.verify(this); return; }
         Activity current = null;
         Throwable failure = null;
         int appearanceChecks = 0;

@@ -217,14 +217,15 @@ public final class MainActivity extends Activity {
         finally{restoringDraft=false;}
     }
     private void receiveShare(Intent intent){
-        if(intent==null||(!Intent.ACTION_SEND.equals(intent.getAction())&&!Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())))return;
+        if(intent==null||(!Intent.ACTION_SEND.equals(intent.getAction())&&!Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())&&!Intent.ACTION_VIEW.equals(intent.getAction())))return;
         if(!canInstallUpdate()){status.setText("请先完成或取消当前操作，再重新分享文件；当前任务保留。");return;}
         final ArrayList<Uri> uris=new ArrayList<>();
         try{
-            if(Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())){
+            if(Intent.ACTION_VIEW.equals(intent.getAction())){if(intent.getData()!=null)uris.add(intent.getData());}
+            else if(Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())){
                 ArrayList<Uri> values=intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);if(values!=null)uris.addAll(values);
             }else{Uri uri=intent.getParcelableExtra(Intent.EXTRA_STREAM);if(uri!=null)uris.add(uri);}
-            if(uris.isEmpty()&&intent.getClipData()!=null)for(int i=0;i<intent.getClipData().getItemCount();i++)uris.add(intent.getClipData().getItemAt(i).getUri());
+            if(!Intent.ACTION_VIEW.equals(intent.getAction())&&uris.isEmpty()&&intent.getClipData()!=null)for(int i=0;i<intent.getClipData().getItemCount();i++)uris.add(intent.getClipData().getItemAt(i).getUri());
             if(uris.isEmpty()||uris.size()>2)throw new IllegalArgumentException("每次可分享一个PDF、一个JSON，或各一个文件。");
             for(Uri uri:uris)if(uri==null||!"content".equals(uri.getScheme())||uri.getAuthority()==null)throw new IllegalArgumentException("只接受文件应用明确分享的PDF或JSON文档地址。");
         }catch(RuntimeException e){error("未导入分享内容："+message(e));return;}
@@ -232,6 +233,7 @@ public final class MainActivity extends Activity {
         readers.execute(()->{try{
             ArrayList<SharedImport.Document> incoming=new ArrayList<>();for(Uri uri:uris)incoming.add(new SharedImport.Document(uri.toString(),displayName(uri)));
             List<SharedImport.Document> documents=SharedImport.validate(incoming);
+            if(Intent.ACTION_VIEW.equals(intent.getAction())&&documents.get(0).pdf)throw new IllegalArgumentException("“其他应用打开”入口仅接受 JSON 目录；PDF 请在程序内选择或使用分享。");
             onUi(()->{if(!shareLoading||generation!=shareGeneration)return;shareLoading=false;updateButtons();StringBuilder notice=new StringBuilder();
                 for(SharedImport.Document document:documents)notice.append(document.pdf?"PDF：":"JSON：").append(document.name).append("\n");
                 notice.append("\n确认后替换对应的文件选择；仍需读取和核对，不会自动生成或覆盖文件。");
@@ -290,7 +292,9 @@ public final class MainActivity extends Activity {
         LinearLayout actions=new LinearLayout(this);tile.addView(actions);
         Button browse=button(actions,"浏览文件",()->pick(request));Button paste=button(actions,"粘贴路径",()->inputPath(request));
         LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,-2,1);left.topMargin=dp(6);left.rightMargin=dp(4);browse.setLayoutParams(left);
-        LinearLayout.LayoutParams right=new LinearLayout.LayoutParams(0,-2,1);right.topMargin=dp(6);right.leftMargin=dp(4);paste.setLayoutParams(right);return value;
+        LinearLayout.LayoutParams right=new LinearLayout.LayoutParams(0,-2,1);right.topMargin=dp(6);right.leftMargin=dp(4);paste.setLayoutParams(right);
+        if(request==PICK_JSON){TextView help=text("找不到下载的 JSON？查看快捷导入方法",14);help.setPadding(0,dp(8),0,dp(8));help.setOnClickListener(v->showJsonImportHelp());tile.addView(help);}
+        return value;
     }
     private LinearLayout disclosure(LinearLayout parent,String label){
         LinearLayout content=column();content.setVisibility(View.GONE);
@@ -396,7 +400,7 @@ public final class MainActivity extends Activity {
         filePicker=new FilePickerDialog(this,request==PICK_PDF,
             uri->selectInput(request,uri),
             ()->{status.setText("已取消文件选择，原来的文件和核对状态保留。");updateButtons();},
-            ()->pickSystemFile(request),()->authorizeFolder("/享做笔记/note/文件.pdf"),
+            ()->pickSystemFile(request),()->authorizeFolder(request==PICK_PDF?"/享做笔记/note/文件.pdf":"/Documents/目录.json"),
             this::canManageFolderGrants,this::onFolderGrantsChanged);
         filePicker.show();
     }
@@ -413,7 +417,13 @@ public final class MainActivity extends Activity {
         Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
             .setType(request==PICK_PDF?"application/pdf":"*/*")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        if(request==PICK_JSON)intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI,DocumentsContract.buildDocumentUri("com.android.externalstorage.documents","primary:Download"));
         clearPendingPath();closePathEditor();launchPicker(intent,request);
+    }
+    private void showJsonImportHelp(){
+        if(!canInstallUpdate())return;
+        showWorkflow(dialogBuilder().setTitle("快速导入 JSON").setMessage("推荐把 JSON 保存到内部存储的 Download（下载）文件夹，再点“下载 / 最近文件”。\n\n如果文件在 QQ 等应用的 Android/data 中，可在来源应用或华为文件管理器里选中这个 JSON，使用“分享”或“用其他应用打开”选择“PDF目录工具”；本工具收到后会先请你确认。来源应用必须提供可读取的文件授权。\n\n系统限制本工具浏览 Android/data 和 Android/obb，显示隐藏文件无法解除。若来源应用不支持分享，请先将 JSON 复制到 Download。临时分享授权失效时需重新分享，原 PDF 和笔记不会因此修改。")
+            .setNegativeButton("返回",null).setPositiveButton("下载 / 最近文件",(d,w)->pickSystemFile(PICK_JSON)).create());
     }
     private String displayName(Uri uri){
         try(Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(c!=null&&c.moveToFirst()){String name=c.getString(0);if(name!=null&&!name.trim().isEmpty())return name;}}
@@ -488,12 +498,19 @@ public final class MainActivity extends Activity {
     }
     private void resolvePath(int request,String path){
         try{Uri uri=PathDocuments.resolve(this,path);closePathEditor();selectInput(request,uri);}
+        catch(SharedPath.RestrictedPathException e){showRestrictedPath(request,e);}
         catch(IOException|IllegalArgumentException e){pendingPathRequest=request;pendingPath=path;dialogBuilder().setTitle("路径暂时无法读取").setMessage(message(e))
             .setNegativeButton("返回编辑",(d,w)->clearPendingPath()).setOnCancelListener(d->clearPendingPath()).setPositiveButton("授权所在文件夹",(d,w)->authorizeFolder(path)).show();}
     }
+    private void showRestrictedPath(int request,SharedPath.RestrictedPathException error){
+        clearPendingPath();showWorkflow(dialogBuilder().setTitle("此目录受系统限制").setMessage(message(error)+"\n\n请从来源应用分享具体文件，或先将它复制到 Download（下载）后选择。当前文件和核对状态保留。")
+            .setNegativeButton("返回编辑",null).setPositiveButton("下载 / 最近文件",(d,w)->pickSystemFile(request)).create());
+    }
     private void authorizeFolder(String path){
         Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION|Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        try{intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI,PathDocuments.initialFolder(path));}catch(IOException|IllegalArgumentException ignored){}
+        try{intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI,PathDocuments.initialFolder(path));}
+        catch(SharedPath.RestrictedPathException e){showRestrictedPath((pendingPathRequest==PICK_JSON||pathRequest==PICK_JSON)?PICK_JSON:PICK_PDF,e);return;}
+        catch(IOException|IllegalArgumentException ignored){}
         launchPicker(intent,PICK_FOLDER);
     }
     private void emptyTree(){if(review!=null)review.clearDocument();}
