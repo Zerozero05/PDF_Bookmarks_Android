@@ -439,6 +439,103 @@ public final class StagedReplacementTest {
         assertArrayEquals(OLD, provider.bytes(ORIGINAL));
     }
 
+    @Test public void verifiedArtifactSuccessKeepsTheFinalNameBackupAndFreshUris() throws Exception {
+        provider.changeUri = true;
+        StagedReplacement.Result result = StagedReplacement.replaceVerified(provider, ORIGINAL, output,
+                digest(OLD), digest(NEW), NEW.length, sink);
+        assertArrayEquals(NEW, provider.bytes(ORIGINAL));
+        assertArrayEquals(OLD, provider.bytes(result.backup.name));
+        assertEquals(provider.files.get(ORIGINAL).uri, result.document.uri);
+        assertEquals(digest(NEW), result.journal.outputHash);
+        assertEquals(StagedReplacement.Phase.COMMITTED, result.journal.phase);
+        assertEquals(1, provider.writeCount); assertEquals(2, provider.renameCount);
+        assertTrue(provider.stagedBeforeOriginalRename);
+    }
+
+    @Test public void verifiedArtifactChangedWithoutLengthChangeIsRejectedBeforeOriginalRename() throws Exception {
+        byte[] changed = NEW.clone(); changed[changed.length - 1] ^= 1;
+        Files.write(output.toPath(), changed);
+        StagedReplacement.ReplacementException failure = failVerified(digest(NEW), NEW.length);
+        assertTrue(failure.originalRestored);
+        assertEquals(0, provider.renameCount);
+        assertArrayEquals(OLD, provider.bytes(ORIGINAL));
+        assertEquals(1, provider.writeCount);
+        assertArrayEquals(changed, provider.bytes(failure.journal.stagingName));
+        for (StagedReplacement.Journal journal : sink.saved) assertNotEquals(StagedReplacement.Phase.COMMITTED, journal.phase);
+    }
+
+    @Test public void verifiedArtifactTruncationIsRejectedBeforeCreatingAStage() throws Exception {
+        Files.write(output.toPath(), Arrays.copyOf(NEW, NEW.length - 1));
+        StagedReplacement.ReplacementException failure = failVerified(digest(NEW), NEW.length);
+        assertNull(failure.journal);
+        assertEquals(0, provider.createCount); assertEquals(0, provider.writeCount); assertEquals(0, provider.renameCount);
+        assertArrayEquals(OLD, provider.bytes(ORIGINAL));
+    }
+
+    @Test public void verifiedArtifactRequiresItsActualLengthAndAValidCompleteHash() throws Exception {
+        for (String hash : new String[]{null, "", "not-a-sha256"}) {
+            beforeAgain(); failVerified(hash, NEW.length);
+            assertEquals(0, provider.createCount); assertEquals(0, provider.renameCount);
+            assertArrayEquals(OLD, provider.bytes(ORIGINAL));
+        }
+        for (long length : new long[]{-1, 0, NEW.length + 1L}) {
+            beforeAgain(); failVerified(digest(NEW), length);
+            assertEquals(0, provider.createCount); assertEquals(0, provider.renameCount);
+            assertArrayEquals(OLD, provider.bytes(ORIGINAL));
+        }
+    }
+
+    @Test public void verifiedArtifactStillIndependentlyReadsBackTheProviderStage() throws Exception {
+        provider.corruptStage = true;
+        StagedReplacement.ReplacementException failure = failVerified(digest(NEW), NEW.length);
+        assertTrue(failure.originalRestored); assertEquals(0, provider.renameCount);
+        assertArrayEquals(OLD, provider.bytes(ORIGINAL));
+        assertArrayEquals(OLD, provider.bytes(failure.journal.stagingName));
+    }
+
+    @Test public void verifiedArtifactRetainsWriteCloseAndDurableJournalFailureGuards() throws Exception {
+        for (int scenario = 0; scenario < 4; scenario++) {
+            beforeAgain();
+            if (scenario == 0) provider.failWrite = true;
+            if (scenario == 1) provider.failClose = true;
+            if (scenario == 2) sink.failPhase = StagedReplacement.Phase.STAGED;
+            if (scenario == 3) sink.failPhase = StagedReplacement.Phase.BACKUP_INTENT;
+            StagedReplacement.ReplacementException failure = failVerified(digest(NEW), NEW.length);
+            assertTrue(failure.originalRestored); assertEquals(0, provider.renameCount);
+            assertArrayEquals(OLD, provider.bytes(ORIGINAL));
+            for (StagedReplacement.Journal journal : sink.saved) assertNotEquals(StagedReplacement.Phase.COMMITTED, journal.phase);
+        }
+    }
+
+    @Test public void verifiedArtifactPromotionFailureRestoresTheOriginalAndKeepsNewBytes() throws Exception {
+        provider.renameFaults.put(2, RenameFault.BEFORE_THROW);
+        StagedReplacement.ReplacementException failure = failVerified(digest(NEW), NEW.length);
+        assertTrue(failure.originalRestored);
+        assertArrayEquals(OLD, provider.bytes(ORIGINAL));
+        assertArrayEquals(NEW, provider.bytes(failure.journal.stagingName));
+        assertEquals(StagedReplacement.Phase.RESTORED, sink.last().phase);
+    }
+
+    @Test public void verifiedArtifactCommitFailureRetainsRecoveryForTheNewPdfAndOldBackup() throws Exception {
+        sink.failPhase = StagedReplacement.Phase.COMMITTED;
+        StagedReplacement.ReplacementException failure = failVerified(digest(NEW), NEW.length);
+        assertFalse(failure.originalRestored);
+        assertArrayEquals(NEW, provider.bytes(ORIGINAL));
+        assertArrayEquals(OLD, provider.bytes(failure.journal.backupName));
+        assertEquals(StagedReplacement.Phase.PROMOTE_INTENT, sink.last().phase);
+        sink.failPhase = null;
+        StagedReplacement.recover(provider, sink.last(), sink);
+        assertArrayEquals(OLD, provider.bytes(ORIGINAL));
+    }
+
+    private StagedReplacement.ReplacementException failVerified(String hash, long length) throws Exception {
+        try {
+            StagedReplacement.replaceVerified(provider, ORIGINAL, output, digest(OLD), hash, length, sink);
+            fail("Changed or incomplete verified output must never replace the original");
+        } catch (StagedReplacement.ReplacementException expected) { return expected; }
+        throw new AssertionError();
+    }
+
     private StagedReplacement.Result replace() throws Exception {
         return StagedReplacement.replace(provider, ORIGINAL, output, digest(OLD), sink);
     }

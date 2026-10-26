@@ -2,6 +2,22 @@
 
 适用当前PDF＋JSON版。首次交接或续接先读根WORK_CHECKPOINT.md及最新工作交接，再读[现行需求](REQUIREMENTS.md)与VALIDATION.md；不能用旧无障碍工程替代本工程。
 
+## v1.4.2 分享输入与保存性能维护
+
+1.4.2／code19为已完成本地修复的未发布候选，正式下载仍为v1.4.0；本轮未公开发布或清理电脑文件。[完整记录](../CHANGELOG.md#v1-4-2)与[用法](USER_GUIDE.md#v142-json-输入与保存)同步维护；旧段落保持当时行为，不覆盖本次经确认的默认值。
+
+`JsonInputRef`将源URI／名称／哈希与本工具UUID分开，`JsonInputStore`只管理 `files/imports/json` 对应输入及元数据。确认前实际读取并严格校验4MB／UTF-8／JSON，确认后提交文件对和副本ID，失败、取消与旧回调不覆盖有效选择。InputSelectionCommit核实commit失败后的内存与持久状态，确认原字段恢复后才释放未使用副本，无法确定归属则保留。ReviewDraft v1原14字段及严格解析保持，恢复按源身份和哈希核实副本，不恢复核对许可；副本名称显示不再访问失效源，刷新授权不改变绑定。SecurityException与FileNotFoundException在主提示提供重新分享／Download恢复，详情保留实际原因，不向单文件分享循环请求Android/data。
+
+源清理按任务ID、精确URI／哈希和副本ID记录。只自动清理已核实删除能力、身份和内容均未变的源及本次副本；未知提供者不调用泛化删除，旧回调不清除后来输入。PDF与所选同步成功后执行，失败／恢复未结束时保留；只读源保留人工待办，不阻止主任务、新任务或更新，也不重新生成。默认全部替换PDF书签和享做旧目录（含手动项）、成功后清理JSON；保留并添加与关闭清理仍可选，笔迹和页面配置不变。
+
+PreparedOutput和享做准备结果只在同次流程的URI／哈希／完整目录／模式一致时复用。StagedDocuments.findAll保持每次完整解析目录，筛选请求名称后再创建URI；重复与缺失显式保留。child每次用findDocumentPath证明直接父目录，再fresh query唯一且ID一致的元数据，不用“后代”代替直接子项，不缓存成员关系。null、不支持或另一合法canonical路径回到原freshchildren；根／终点冲突、权限失效、丢失及元数据不唯一仍停止。VerifiedOutput只省去单独扫描，在实际复制时重算哈希；源前后内容、备份前校验、最终输出独立读回、改名事务及恢复日志保持。
+
+最终394项中391通过、3旧私有fixture缺失跳过，0失败／错误；lint0错误／23警告。设备跨UID336项动态断言、VerifiedPdf、Main两组合成生成／取消／续存／精确清理，以及真正force-stop不同PID且源撤权后的v1草稿恢复通过。目标真实238页PDF／39条JSON只读prepare各3轮通过：合并中位11270→3532ms、替换11852→3644ms，目录列举14→4，每轮仍10流／68221304B。此比较限于本轮两个候选的真实只读预检；不外推真实写入、旧正式版APK、其他文件或200MiB。50MiB受控模型、安装与未测范围集中见[本次记录](../CHANGELOG.md#v1-4-2)，不以宿主或合成结果冒充真实笔记事务。
+
+已装主包为1.4.2／code19，SHA-256 `daf552b8178e3360ee6723f5cd086bcfc2caf42d8c2af8a248792091811147b5`，与最终本地包一致；保留原升级签名和应用数据。辅助包字节也已逐一核实。真实只读检查期间输入、4组偏好、授权、草稿、应用输入区与所读原文件哈希保持。安装前后另核对指定资源目录根层93份原文件，名称集合及SHA全部一致，不当作递归笔迹附件全覆盖；全阶段只有输入选择组偏好因用户实际QQ导入改变，其余3组保持。已确认JSON副本及来源／哈希绑定最终一致，未删除用户JSON。最终Main两份合成输出另以pypdf内存独立解析，5页、3节点、层级1／2／1、目标页1／2／3和SHA全部核对通过；这些输出属于隔离测试，本轮不曾生成、同步、备份或删除真实笔记资料。
+
+沿用原实现，没有新增依赖或复制外部代码；实时直接父身份方法参考Android官方[findDocumentPath](https://developer.android.com/reference/android/provider/DocumentsContract#findDocumentPath(android.content.ContentResolver,%20android.net.Uri))。来源未授予的权限不能由接收端创造；不增加全盘权限，不导出来源Provider。
+
 ## v1.4.0 流程与界面维护
 
 当前正式版1.4.0／code17，Release422299598为Latest；标签b1055a3c8a8b8906c61a0957477edd1b0d507a4d及原签名五附件已公开实读，main同候选tree合并并通过CI。正式说明见[记录](../VALIDATION.md#formal-v140-2026-10-24)，实现与边界见[完整日志](../CHANGELOG.md#v1-4-0)；旧版本段落保留为历史。

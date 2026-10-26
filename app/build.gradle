@@ -8,7 +8,7 @@ android {
         applicationId 'cn.local.pdfbookmarks'
         minSdk 26
         targetSdk 35
-        versionCode 18
+        versionCode 19
         versionName appVersion
         testInstrumentationRunner 'cn.local.pdfbookmarks.StartupSmoke'
         resValue 'string', 'app_version', appVersion
@@ -21,7 +21,16 @@ android {
     packaging {
         resources.excludes += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE', 'META-INF/LICENSE.txt', 'META-INF/NOTICE', 'META-INF/NOTICE.txt', 'META-INF/versions/9/OSGI-INF/MANIFEST.MF']
     }
-    buildTypes { release { minifyEnabled false } }
+    buildTypes {
+        release { minifyEnabled false }
+        fixture {
+            initWith debug
+            applicationIdSuffix '.testhost'
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['debug']
+        }
+    }
+    testBuildType = providers.gradleProperty('fixtureTests').orNull == 'true' ? 'fixture' : 'debug'
     testOptions {
         unitTests.returnDefaultValues = true
         unitTests.all {

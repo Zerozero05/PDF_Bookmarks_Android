@@ -20,6 +20,7 @@ import java.io.OutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.LinkedHashMap;
@@ -115,20 +116,28 @@ public final class EnjoyDirectorySync {
                             String expectedPdfHash, boolean replaceExisting) throws IOException {
         if (hasPending() || automaticCleanupRecord() != null) throw new IOException("享做目录同步或旧目录清理尚待完成，请先处理记录。");
         if (!recognizes(pdf)) throw new IOException("当前路径不是已核实的享做笔记资源 PDF，未修改享做目录。");
+        long stage=System.nanoTime();
         StagedDocuments documents = StagedDocuments.forCatalog(context, PathDocuments.folderForDocument(context, pdf));
+        WorkMetrics.elapsed("enjoyFolder",stage);stage=System.nanoTime();
         String id = DocumentsContract.getDocumentId(pdf), name = id.substring(id.lastIndexOf('/') + 1);
         StagedReplacement.Document selected = checkedPdf(documents, name, validHash(expectedPdfHash));
         if (!sameDocument(pdf, Uri.parse(selected.uri))) throw new IOException("PDF 的名称或标识变化，请重新预览。");
+        WorkMetrics.elapsed("enjoyPdfBefore",stage);stage=System.nanoTime();
         List<Snapshot> snapshots = new ArrayList<>();
-        byte[] original = snapshot(documents, "catalog.json", false, snapshots);
-        byte[] doc = snapshot(documents, "doc", false, snapshots);
-        byte[] pageids = snapshot(documents, "pageids.json", false, snapshots);
-        snapshot(documents, "page_usn.json", true, snapshots);
-        snapshot(documents, "catalog.json.temp", true, snapshots);
+        Map<String,List<StagedReplacement.Document>> entries = documents.findAll(Arrays.asList("catalog.json", "doc", "pageids.json", "page_usn.json", "catalog.json.temp"));
+        byte[] original = snapshot(documents, "catalog.json", false, snapshots, entries);
+        byte[] doc = snapshot(documents, "doc", false, snapshots, entries);
+        byte[] pageids = snapshot(documents, "pageids.json", false, snapshots, entries);
+        snapshot(documents, "page_usn.json", true, snapshots, entries);
+        snapshot(documents, "catalog.json.temp", true, snapshots, entries);
+        WorkMetrics.elapsed("enjoyConfigRead",stage);stage=System.nanoTime();
         EnjoyCatalog.Plan plan = EnjoyCatalog.mergeNativePdfBookmarks(original, pageids, doc,
                 "/storage/emulated/0/" + id.substring(8), actualPages, rows, replaceExisting);
+        WorkMetrics.elapsed("enjoyMerge",stage);stage=System.nanoTime();
         verifySnapshots(documents, snapshots, false);
+        WorkMetrics.elapsed("enjoyConfigVerify",stage);stage=System.nanoTime();
         checkedPdf(documents, name, expectedPdfHash);
+        WorkMetrics.elapsed("enjoyPdfAfter",stage);stage=System.nanoTime();
         Map<String,Integer> physicalPages = new LinkedHashMap<>();
         JsonObject indexes = JsonParser.parseString(new String(pageids, java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
         for (JsonElement element : indexes.getAsJsonArray("infos")) {
@@ -138,6 +147,7 @@ public final class EnjoyDirectorySync {
                 physicalPages.put(page.get("id").getAsString(), page.get("docIndex").getAsInt() + 1);
             }
         }
+        WorkMetrics.elapsed("enjoyPageMap",stage);
         return new Prepared(documents, name, snapshots, original, plan, physicalPages);
     }
 
@@ -424,8 +434,8 @@ public final class EnjoyDirectorySync {
     }
 
     private static byte[] snapshot(StagedDocuments documents, String name, boolean optional,
-                                   List<Snapshot> snapshots) throws IOException {
-        StagedReplacement.Document document = unique(documents, name, optional);
+                                   List<Snapshot> snapshots, Map<String,List<StagedReplacement.Document>> entries) throws IOException {
+        StagedReplacement.Document document = unique(entries, name, optional);
         byte[] bytes = document == null ? null : readSmall(documents, document);
         snapshots.add(new Snapshot(name, document, bytes == null ? null : digest(bytes)));
         return bytes;
@@ -433,9 +443,12 @@ public final class EnjoyDirectorySync {
 
     private static void verifySnapshots(StagedDocuments documents, List<Snapshot> snapshots,
                                         boolean skipCatalog) throws IOException {
+        List<String> names = new ArrayList<>();
+        for (Snapshot snapshot : snapshots) if (!skipCatalog || !"catalog.json".equals(snapshot.name)) names.add(snapshot.name);
+        Map<String,List<StagedReplacement.Document>> entries = documents.findAll(names);
         for (Snapshot snapshot : snapshots) {
             if (skipCatalog && "catalog.json".equals(snapshot.name)) continue;
-            StagedReplacement.Document current = unique(documents, snapshot.name, snapshot.uri == null);
+            StagedReplacement.Document current = unique(entries, snapshot.name, snapshot.uri == null);
             if (snapshot.uri == null ? current != null : current == null || !snapshot.uri.equals(current.uri)
                     || !snapshot.hash.equals(digest(readSmall(documents, current)))) {
                 throw new IOException("享做文件在预览后变化，请保存并完全停止享做后重新预览：" + snapshot.name);
@@ -466,6 +479,13 @@ public final class EnjoyDirectorySync {
         List<StagedReplacement.Document> found = documents.find(name);
         if (found.isEmpty() && optional) return null;
         if (found.size() != 1) throw new IOException("享做资源文件不存在或同名不唯一：" + name);
+        return found.get(0);
+    }
+
+    private static StagedReplacement.Document unique(Map<String,List<StagedReplacement.Document>> entries, String name, boolean optional) throws IOException {
+        List<StagedReplacement.Document> found=entries.get(name);
+        if(found==null||found.isEmpty()){if(optional)return null;throw new IOException("享做资源文件不存在："+name);}
+        if(found.size()!=1)throw new IOException("享做资源文件同名不唯一："+name);
         return found.get(0);
     }
 

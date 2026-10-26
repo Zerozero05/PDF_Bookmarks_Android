@@ -5,6 +5,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
@@ -106,7 +107,18 @@ public final class StagedReplacement {
     public static Result replace(Provider provider, String originalName, File verifiedOutput,
                                  String expectedOriginalHash, Sink sink)
             throws ReplacementException {
-        return replace(provider, originalName, verifiedOutput, expectedOriginalHash, sink, false);
+        return replace(provider, originalName, verifiedOutput, expectedOriginalHash, sink, false, null, 0);
+    }
+
+    /** Reuses generation's digest, but verifies the actual source bytes while copying into a new stage. */
+    public static Result replaceVerified(Provider provider, String originalName, File verifiedOutput,
+                                        String expectedOriginalHash, String expectedOutputHash,
+                                        long expectedLength, Sink sink) throws ReplacementException {
+        if (expectedOutputHash == null) {
+            throw new ReplacementException("缺少已生成 PDF 的完整校验值", null, null, false);
+        }
+        return replace(provider, originalName, verifiedOutput, expectedOriginalHash, sink, false,
+                expectedOutputHash, expectedLength);
     }
 
     /** 只更新已验证的享做主目录文件；不接触临时目录或其他配置。 */
@@ -117,11 +129,12 @@ public final class StagedReplacement {
             throw new ReplacementException("仅允许更新 catalog.json，其他目录或配置文件不会修改",
                     null, null, false);
         }
-        return replace(provider, originalName, verifiedOutput, expectedOriginalHash, sink, true);
+        return replace(provider, originalName, verifiedOutput, expectedOriginalHash, sink, true, null, 0);
     }
 
     private static Result replace(Provider provider, String originalName, File verifiedOutput,
-                                  String expectedOriginalHash, Sink sink, boolean catalog)
+                                  String expectedOriginalHash, Sink sink, boolean catalog,
+                                  String expectedOutputHash, long expectedLength)
             throws ReplacementException {
         String kind = catalog ? "目录文件" : "PDF";
         Journal journal = null;
@@ -135,9 +148,17 @@ public final class StagedReplacement {
                     || !verifiedOutput.canRead() || verifiedOutput.length() == 0) {
                 throw new IOException("已验证输出不是可读取的非空文件");
             }
+            long outputLength = verifiedOutput.length();
             String outputHash;
-            try (InputStream input = new FileInputStream(verifiedOutput)) {
-                outputHash = hash(input, null);
+            if (expectedOutputHash != null) {
+                outputHash = validHash(expectedOutputHash);
+                if (expectedLength < 1 || outputLength != expectedLength) {
+                    throw new IOException("已生成 PDF 的长度变化，请重新生成；原件未修改");
+                }
+            } else {
+                try (InputStream input = new FileInputStream(verifiedOutput)) {
+                    outputHash = hash(input, null);
+                }
             }
             Document original = checked(provider, originalName, originalHash, null);
             String token = UUID.randomUUID().toString();
@@ -161,12 +182,18 @@ public final class StagedReplacement {
             journal = snapshot(journal, Phase.CREATE_INTENT, staging.uri, null, null);
             save(sink, journal, null);
             // 原件直到完整暂存文件关闭、重读校验通过之前，只有读取操作。
-            try (InputStream source = new FileInputStream(verifiedOutput)) {
+            MessageDigest copiedDigest = MessageDigest.getInstance("SHA-256");
+            long copiedLength;
+            try (InputStream source = new DigestInputStream(new FileInputStream(verifiedOutput), copiedDigest)) {
                 beforeIo(null);
                 try (OutputStream destination = provider.openWriteNew(staging)) {
                     if (destination == null) throw new IOException("系统未返回暂存 " + kind + " 写入流");
-                    copy(source, destination);
+                    copiedLength = copy(source, destination);
                 }
+            }
+            if (copiedLength != outputLength || verifiedOutput.length() != outputLength
+                    || !outputHash.equals(hex(copiedDigest.digest()))) {
+                throw new IOException("已生成文件在复制期间变化，暂存内容未通过校验；原件未修改");
             }
             staging = checked(provider, stagingName, outputHash, null);
             journal = snapshot(journal, Phase.STAGED, staging.uri, null, null);
@@ -349,16 +376,21 @@ public final class StagedReplacement {
             if (count == -1) break;
             if (count > 0) digest.update(buffer, 0, count);
         }
-        StringBuilder hex = new StringBuilder(64);
-        for (byte value : digest.digest()) {
-            hex.append(Character.forDigit((value >>> 4) & 15, 16));
-            hex.append(Character.forDigit(value & 15, 16));
-        }
-        return hex.toString();
+        return hex(digest.digest());
     }
 
-    private static void copy(InputStream input, OutputStream output) throws IOException {
+    private static String hex(byte[] bytes) {
+        StringBuilder result = new StringBuilder(64);
+        for (byte value : bytes) {
+            result.append(Character.forDigit((value >>> 4) & 15, 16));
+            result.append(Character.forDigit(value & 15, 16));
+        }
+        return result.toString();
+    }
+
+    private static long copy(InputStream input, OutputStream output) throws IOException {
         byte[] buffer = new byte[64 * 1024];
+        long length = 0;
         while (true) {
             beforeIo(null);
             int count = input.read(buffer);
@@ -366,10 +398,12 @@ public final class StagedReplacement {
             if (count > 0) {
                 beforeIo(null);
                 output.write(buffer, 0, count);
+                length += count;
             }
         }
         beforeIo(null);
         output.flush();
+        return length;
     }
 
     private static Journal snapshot(Journal journal, Phase phase, String stagingUri,

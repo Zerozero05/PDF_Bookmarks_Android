@@ -20,14 +20,19 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class StartupSmoke extends Instrumentation {
     private static final long RECREATE_TIMEOUT_MS = 10000;
     private boolean readOnly141;
+    private Bundle requested;
 
     @Override public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
+        requested=arguments==null?new Bundle():new Bundle(arguments);
         readOnly141 = arguments != null && "true".equalsIgnoreCase(arguments.getString("readOnly141"));
         start();
     }
 
     @Override public void onStart() {
+        if("true".equals(requested.getString("workflow142"))||requested.containsKey("restart142")||requested.containsKey("performance142")||requested.containsKey("readOnly142")||requested.containsKey("pipeline142")||requested.containsKey("profile142")){
+            Workflow142Runner.run(this,requested);return;
+        }
         if (readOnly141) { Import141Smoke.verify(this); return; }
         Activity current = null;
         Throwable failure = null;
